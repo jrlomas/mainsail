@@ -17,6 +17,7 @@
 
             <!-- diagnosis first: the answer, before the raw stream -->
             <atlas-diagnosis-card :diagnosis="diagnosis" class="mb-3" />
+            <atlas-assistant-card />
 
             <!-- filter bar (1:1 with the CLI/atlas.view filter contract) -->
             <div class="d-flex flex-wrap align-center mb-2" style="gap: 8px">
@@ -119,8 +120,9 @@ import {
     selectEvents,
 } from '@/components/panels/Atlas/atlasFilter'
 import AtlasDiagnosisCard from '@/components/panels/Atlas/AtlasDiagnosisCard.vue'
+import AtlasAssistantCard from '@/components/panels/Atlas/AtlasAssistantCard.vue'
 
-@Component({ components: { Panel, AtlasDiagnosisCard } })
+@Component({ components: { Panel, AtlasAssistantCard, AtlasDiagnosisCard } })
 export default class AtlasPanel extends Mixins(BaseMixin) {
     mdiPulse = mdiPulse
     filter = defaultFilter()
