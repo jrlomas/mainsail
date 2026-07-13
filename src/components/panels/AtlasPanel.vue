@@ -11,6 +11,10 @@
         </template>
 
         <div class="atlas-panel-body pa-2">
+            <v-alert v-if="bridgeProblem" dense text type="warning" class="mb-3">
+                {{ bridgeProblem }}
+            </v-alert>
+
             <!-- diagnosis first: the answer, before the raw stream -->
             <atlas-diagnosis-card :diagnosis="diagnosis" class="mb-3" />
 
@@ -121,10 +125,18 @@ export default class AtlasPanel extends Mixins(BaseMixin) {
     mdiPulse = mdiPulse
     filter = defaultFilter()
 
-    // The Atlas daemon pushes its state through Moonraker; read defensively
-    // so a missing source renders an empty-but-valid panel.
     get rawAtlas(): unknown {
-        return (this.$store.state.printer as Record<string, unknown> | undefined)?.atlas ?? {}
+        return this.$store.state.server.atlas?.status ?? {}
+    }
+
+    get bridgeProblem(): string {
+        const bridge = this.$store.state.server.atlas?.bridge
+        if (!bridge) return this.$t('Panels.AtlasPanel.BridgeUnavailable').toString()
+        if (bridge.last_error) {
+            return this.$t('Panels.AtlasPanel.BridgeError', { error: bridge.last_error }).toString()
+        }
+        if (bridge.stale) return this.$t('Panels.AtlasPanel.BridgeStale').toString()
+        return ''
     }
 
     get timeline(): AtlasTimeline {

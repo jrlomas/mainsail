@@ -40,8 +40,9 @@ export const actions: ActionTree<SocketState, RootState> = {
             commit('server/updateManager/setStatus', { busy: false }, { root: true })
     },
 
-    onClose({ commit }) {
+    onClose({ commit, dispatch }) {
         commit('setDisconnected')
+        dispatch('server/atlas/setDisconnected', null, { root: true })
     },
 
     onMessage({ commit, dispatch }, payload) {
@@ -137,6 +138,10 @@ export const actions: ActionTree<SocketState, RootState> = {
 
             case 'notify_sensor_update':
                 dispatch('server/sensor/updateSensors', payload.params[0], { root: true })
+                break
+
+            case 'notify_atlas_status_update':
+                dispatch('server/atlas/setStatus', payload.params[0], { root: true })
                 break
 
             default:

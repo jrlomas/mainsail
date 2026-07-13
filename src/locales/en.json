@@ -683,6 +683,9 @@
             "WeightUsed": "{weight}g used"
         },
         "AtlasPanel": {
+            "BridgeError": "Atlas state could not be refreshed: {error}",
+            "BridgeStale": "Atlas has stopped updating. Its last-known facts are shown below.",
+            "BridgeUnavailable": "Waiting for the Atlas service…",
             "CaseCaptured": "Case captured",
             "CaseHash": "Case",
             "Cause": "Cause",

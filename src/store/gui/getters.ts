@@ -92,8 +92,9 @@ export const getters: GetterTree<GuiState, RootState> = {
             allPanels = allPanels.filter((name) => name !== 'afc')
         }
 
-        // remove atlas panel, if no Atlas companion state exists in Klipper
-        if (!rootState.printer?.atlas) {
+        // Atlas is a Moonraker component; it remains visible while the daemon
+        // is waiting or stale so the panel can explain the service state.
+        if (!rootState.server?.components.includes('atlas')) {
             allPanels = allPanels.filter((name) => name !== 'atlas')
         }
 

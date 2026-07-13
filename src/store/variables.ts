@@ -42,6 +42,7 @@ export const validGcodeExtensions = ['.gcode', '.g', '.gco', '.ufp', '.nc']
  * List of initable server components
  */
 export const initableServerComponents = [
+    'atlas',
     'history',
     'power',
     'updateManager',
