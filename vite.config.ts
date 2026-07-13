@@ -1,6 +1,6 @@
-import vue from '@vitejs/plugin-vue2'
+import vue from '@pedrolamas/plugin-vue2'
 import version from 'vite-plugin-package-version'
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 
 import Components from 'unplugin-vue-components/vite'
 import { VuetifyResolver } from 'unplugin-vue-components/resolvers'
@@ -111,59 +111,48 @@ export default defineConfig({
 
     build: {
         target: 'safari12',
-        rollupOptions: {
+        rolldownOptions: {
             output: {
                 manualChunks: (id: string) => {
-                    if (id.includes('node_modules')) {
-                        // keep Vue in a single chunk
-                        if (id.includes('/node_modules/vue/') || id.includes('/node_modules/@vue/')) {
-                            return 'vue'
-                        }
+                    if (!id.includes('node_modules')) return
 
-                        // split codemirror into its own chunk
-                        if (id.includes('/codemirror/') || id.includes('/@codemirror/')) {
-                            return 'codemirror'
-                        }
-
-                        // split these libs into their own chunks
-                        const chunkedLibs = ['vuetify', 'echarts', 'overlayscrollbars']
-                        for (const lib of chunkedLibs) {
-                            if (id.includes(`/node_modules/${lib}/`)) {
-                                return lib.replace('.js', '')
-                            }
+                    // split these libs (incl. their @lib/* scoped packages) into their own chunks
+                    const chunkedLibs = ['codemirror', 'vuetify', 'echarts', 'overlayscrollbars']
+                    for (const lib of chunkedLibs) {
+                        if (id.includes(`/node_modules/${lib}/`) || id.includes(`/node_modules/@${lib}/`)) {
+                            return lib
                         }
                     }
                 },
             },
         },
-        commonjsOptions: {
-            transformMixedEsModules: true,
-        },
     },
 
     envPrefix: 'VUE_',
     resolve: {
-        dedupe: ['vue'],
         alias: {
-            // Ensure every importer exact same Vue build
-            vue: 'vue/dist/vue.runtime.esm.js',
-            'vue/dist/vue.runtime.common.js': 'vue/dist/vue.runtime.esm.js',
-            'vue/dist/vue.runtime.common.dev.js': 'vue/dist/vue.runtime.esm.js',
-            'vue/dist/vue.runtime.common.prod.js': 'vue/dist/vue.runtime.esm.js',
-            'vue/dist/vue.common.js': 'vue/dist/vue.runtime.esm.js',
             '@': path.resolve(__dirname, './src'),
             stream: 'stream-browserify',
             events: 'events',
         },
     },
 
+    // 'global' is required by node polyfills (stream-browserify, events) at runtime
+    define: {
+        global: 'globalThis',
+    },
+
+    // Vite 8 transforms TS via Oxc, which (unlike the build) does not auto-detect
+    // experimentalDecorators from tsconfig in per-file transforms (e.g. Vitest).
+    // Vue 2 class components rely on legacy decorators, so enable them explicitly.
+    oxc: {
+        decorator: {
+            legacy: true,
+        },
+    },
+
     optimizeDeps: {
         include: ['events'],
-        esbuildOptions: {
-            define: {
-                global: 'globalThis',
-            },
-        },
     },
 
     server: {
