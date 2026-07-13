@@ -92,6 +92,16 @@ export const getters: GetterTree<GuiState, RootState> = {
             allPanels = allPanels.filter((name) => name !== 'afc')
         }
 
+        // remove atlas panel, if no Atlas companion state exists in Klipper
+        if (!rootState.printer?.atlas) {
+            allPanels = allPanels.filter((name) => name !== 'atlas')
+        }
+
+        // remove oams panel, if no OpenAMS manager exists in Klipper
+        if (!rootState.printer?.oams_manager) {
+            allPanels = allPanels.filter((name) => name !== 'oams')
+        }
+
         // remove mmu panel, if no Happy Hare exists in Klipper
         if (!rootState.printer?.mmu) {
             allPanels = allPanels.filter((name) => name !== 'mmu')

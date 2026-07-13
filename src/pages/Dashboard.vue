@@ -83,6 +83,7 @@
 import Component from 'vue-class-component'
 import { Mixins } from 'vue-property-decorator'
 import AfcPanel from '@/components/panels/AfcPanel.vue'
+import AtlasPanel from '@/components/panels/AtlasPanel.vue'
 import ExtruderControlPanel from '@/components/panels/ExtruderControlPanel.vue'
 import DashboardMixin from '@/components/mixins/dashboard'
 import KlippyStatePanel from '@/components/panels/KlippyStatePanel.vue'
@@ -93,6 +94,7 @@ import MacrosPanel from '@/components/panels/MacrosPanel.vue'
 import MiniconsolePanel from '@/components/panels/MiniconsolePanel.vue'
 import MinSettingsPanel from '@/components/panels/MinSettingsPanel.vue'
 import MiscellaneousPanel from '@/components/panels/MiscellaneousPanel.vue'
+import OamsPanel from '@/components/panels/OamsPanel.vue'
 import SpoolmanPanel from '@/components/panels/SpoolmanPanel.vue'
 import MmuPanel from '@/components/panels/MmuPanel.vue'
 import StatusPanel from '@/components/panels/StatusPanel.vue'
@@ -103,6 +105,7 @@ import WebcamPanel from '@/components/panels/WebcamPanel.vue'
 @Component({
     components: {
         AfcPanel,
+        AtlasPanel,
         ExtruderControlPanel,
         KlippyStatePanel,
         LedEffectsPanel,
@@ -112,6 +115,7 @@ import WebcamPanel from '@/components/panels/WebcamPanel.vue'
         MiniconsolePanel,
         MinSettingsPanel,
         MiscellaneousPanel,
+        OamsPanel,
         SpoolmanPanel,
         MmuPanel,
         StatusPanel,
