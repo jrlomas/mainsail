@@ -162,13 +162,20 @@ export default class AtlasAssistantCard extends Mixins(BaseMixin) {
     async ask(): Promise<void> {
         const question = this.question.trim()
         if (!question || this.busy) return
+        const history = this.messages.slice(-8).map((message) => ({
+            role: message.role,
+            content: message.text,
+        }))
         this.busyAction = 'ask'
         this.error = ''
         this.proposal = null
         this.messages.push({ role: 'operator', text: question })
         this.question = ''
         try {
-            const response = await this.$socket.emitAndWait('server.atlas.assistant.ask', { question })
+            const response = await this.$socket.emitAndWait('server.atlas.assistant.ask', {
+                question,
+                history,
+            })
             this.messages.push({ role: 'atlas', text: response.result.answer })
         } catch (reason) {
             this.error = this.errorText(reason)

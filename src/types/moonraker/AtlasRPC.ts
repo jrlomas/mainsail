@@ -26,10 +26,16 @@ export interface AtlasAssistantEnvelope<T> {
     result: T
 }
 
+export interface AtlasAssistantHistoryMessage {
+    role: 'operator' | 'atlas'
+    content: string
+}
+
 /** Local-only Atlas assistant endpoints supplied by the HELIX fork. */
 export interface AtlasRPC {
     'server.atlas.assistant.ask': (params: {
         question: string
+        history?: AtlasAssistantHistoryMessage[]
     }) => Promise<AtlasAssistantEnvelope<{ answer: string; read_only: true }>>
     'server.atlas.assistant.interpret': (params: {
         structured?: boolean
