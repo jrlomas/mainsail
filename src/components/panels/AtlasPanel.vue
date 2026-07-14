@@ -96,7 +96,7 @@
                         </thead>
                         <tbody>
                             <tr v-for="event in visibleEvents" :key="event.seq" :class="rowClass(event)">
-                                <td class="monospace">{{ formatTime(event) }}</td>
+                                <td class="monospace" :title="timeTitle(event)">{{ formatTime(event) }}</td>
                                 <td>
                                     <v-chip x-small label :color="severityColor(event.severity)">
                                         {{ event.severity }}
@@ -131,6 +131,7 @@ import {
     defaultFilter,
 } from '@/components/panels/Atlas/types'
 import { buildDiagnosis, buildTimeline } from '@/components/panels/Atlas/atlasAdapter'
+import { atlasTimeTitle, formatAtlasTime } from '@/components/panels/Atlas/atlasTime'
 import {
     distinctKinds,
     distinctSources,
@@ -202,8 +203,11 @@ export default class AtlasPanel extends Mixins(BaseMixin) {
     }
 
     formatTime(event: AtlasEvent): string {
-        if (event.mtime === null) return '?'
-        return (event.t_exact ? '' : '~') + event.mtime.toFixed(3)
+        return formatAtlasTime(event)
+    }
+
+    timeTitle(event: AtlasEvent): string {
+        return atlasTimeTitle(event)
     }
 
     severityColor(severity: AtlasSeverity): string {

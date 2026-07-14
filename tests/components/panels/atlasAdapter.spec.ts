@@ -15,6 +15,7 @@ describe('atlasAdapter', () => {
                     severity: 'critical',
                     summary: "MCU 'mcu' shutdown: Timer too close",
                     mtime: 8,
+                    wall_time: 1700000008,
                     time_basis: 'host_monotonic',
                     t_exact: false,
                     fields: { fault_class: 'timer_too_close' },
@@ -23,6 +24,7 @@ describe('atlasAdapter', () => {
             )
             expect(e.seq).toBe(3)
             expect(e.severity).toBe('critical')
+            expect(e.wall_time).toBe(1700000008)
             expect(e.fields.fault_class).toBe('timer_too_close')
         })
 
@@ -33,6 +35,7 @@ describe('atlasAdapter', () => {
             expect(e.source).toBe('host')
             expect(e.severity).toBe('info') // unknown severity -> info
             expect(e.mtime).toBeNull()
+            expect(e.wall_time).toBeNull()
             expect(e.time_basis).toBe('none')
             expect(e.fields).toEqual({})
         })

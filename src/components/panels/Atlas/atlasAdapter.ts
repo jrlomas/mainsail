@@ -49,6 +49,7 @@ export function buildEvent(raw: unknown, index: number): AtlasEvent {
         severity: asSeverity(r.severity),
         summary: asString(r.summary),
         mtime: asNumberOrNull(r.mtime),
+        wall_time: asNumberOrNull(r.wall_time),
         time_basis: asBasis(r.time_basis),
         t_exact: r.t_exact === true,
         fields: isRecord(r.fields) ? r.fields : {},

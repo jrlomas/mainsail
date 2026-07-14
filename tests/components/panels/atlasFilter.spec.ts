@@ -23,6 +23,7 @@ function ev(partial: Partial<AtlasEvent>): AtlasEvent {
         severity: 'info',
         summary: '',
         mtime: null,
+        wall_time: null,
         time_basis: 'none',
         t_exact: false,
         fields: {},

@@ -26,6 +26,8 @@ export interface AtlasEvent {
     summary: string
     // Machine-time axis in seconds; null when no time was recovered.
     mtime: number | null
+    // Wall-clock epoch seconds resolved by Atlas from the session anchor.
+    wall_time: number | null
     time_basis: AtlasTimeBasis
     // False when the timestamp was carried forward (an "approximately here").
     t_exact: boolean
