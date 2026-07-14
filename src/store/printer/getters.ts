@@ -385,14 +385,24 @@ export const getters: GetterTree<PrinterState, RootState> = {
                 if (load > 0.95) loadProgressColor = 'error'
                 else if (load > 0.8) loadProgressColor = 'warning'
 
+                // CLOCK_FREQ / last_stats.freq is Klipper's scheduler and
+                // timestamp tick rate, which is not necessarily the processor
+                // clock. RP2040 intentionally uses a 12MHz timer while its
+                // cores and peripherals run at 200MHz. Prefer the explicit
+                // firmware capability when present and retain the scheduler
+                // frequency as the compatibility fallback.
+                const advertisedCoreFreq = mcu.mcu_constants?.MCU_CORE_FREQ
+                const freq =
+                    typeof advertisedCoreFreq === 'number' ? advertisedCoreFreq : (mcu.last_stats?.freq ?? null)
+
                 mcus.push({
                     name: key,
                     mcu_constants: mcu.mcu_constants,
                     last_stats: mcu.last_stats,
                     version: versionOutput,
                     chip: mcu.mcu_constants?.MCU ?? null,
-                    freq: mcu.last_stats?.freq ?? null,
-                    freqFormat: formatFrequency(mcu.last_stats?.freq ?? 0),
+                    freq,
+                    freqFormat: formatFrequency(freq ?? 0),
                     awake: ((mcu.last_stats?.mcu_awake ?? 0) / 5).toFixed(2),
                     load: load.toFixed(2),
                     loadPercent: load < 1 ? Math.round(load * 100) : 100,

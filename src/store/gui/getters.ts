@@ -129,12 +129,20 @@ export const getters: GetterTree<GuiState, RootState> = {
             panels = panels?.filter((element) => element !== null) ?? []
             const allPossiblePanels = getters['getAllPossiblePanels']
 
-            if (column < 2) {
+            // Panels introduced after a user's dashboard layout was saved are
+            // normally appended to its first column. Atlas needs the same
+            // readable center/right column as the temperature panel instead.
+            // Run missing-panel discovery for that preferred column too so
+            // existing Moonraker databases get the corrected placement
+            // without being reset.
+            const atlasColumn = viewport === 'mobile' ? 0 : 2
+            if (column < 2 || column === atlasColumn) {
                 const allViewportPanels = getters['getAllPanelsFromViewport'](viewport) as GuiStateLayoutoption[]
                 const missingPanels: GuiStateLayoutoption[] = []
 
                 allPossiblePanels.forEach((panelname: string) => {
-                    if (!allViewportPanels.find((panel) => panel.name === panelname))
+                    const preferredColumn = panelname === 'atlas' ? atlasColumn : column < 2 ? column : -1
+                    if (column === preferredColumn && !allViewportPanels.find((panel) => panel.name === panelname))
                         missingPanels.push({
                             name: panelname,
                             visible: true,

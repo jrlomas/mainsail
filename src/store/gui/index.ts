@@ -77,6 +77,7 @@ export const getDefaultState = (): GuiState => {
                 { name: 'machine-settings', visible: true },
                 { name: 'miscellaneous', visible: true },
                 { name: 'temperature', visible: true },
+                { name: 'atlas', visible: true },
                 { name: 'miniconsole', visible: false },
             ],
             tabletLayout1: [
@@ -89,6 +90,7 @@ export const getDefaultState = (): GuiState => {
             ],
             tabletLayout2: [
                 { name: 'temperature', visible: true },
+                { name: 'atlas', visible: true },
                 { name: 'miniconsole', visible: true },
             ],
             desktopLayout1: [
@@ -101,6 +103,7 @@ export const getDefaultState = (): GuiState => {
             ],
             desktopLayout2: [
                 { name: 'temperature', visible: true },
+                { name: 'atlas', visible: true },
                 { name: 'miniconsole', visible: true },
             ],
             widescreenLayout1: [
@@ -111,6 +114,7 @@ export const getDefaultState = (): GuiState => {
             ],
             widescreenLayout2: [
                 { name: 'temperature', visible: true },
+                { name: 'atlas', visible: true },
                 { name: 'machine-settings', visible: true },
             ],
             widescreenLayout3: [

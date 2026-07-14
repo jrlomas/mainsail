@@ -88,3 +88,33 @@ describe('printer/getEstimatedTimeETAFormat', () => {
         expect(runGetter(eta, true)).toBe('01:00 AM +1')
     })
 })
+
+describe('printer/getMcus', () => {
+    it('reports an advertised core clock instead of the scheduler tick rate', () => {
+        const state = {
+            mcu: {
+                mcu_version: 'v0.13.0-test',
+                mcu_constants: { MCU: 'rp2040', MCU_CORE_FREQ: 200_000_000 },
+                last_stats: { freq: 12_000_000 },
+            },
+        } as unknown as PrinterState
+        const mcus = getters.getMcus(state, { getMcuTempSensor: () => null }, {} as RootState, {})
+
+        expect(mcus).toHaveLength(1)
+        expect(mcus[0].freq).toBe(200_000_000)
+        expect(mcus[0].freqFormat).toContain('200')
+    })
+
+    it('keeps last_stats.freq as the compatibility fallback', () => {
+        const state = {
+            mcu: {
+                mcu_version: 'v0.13.0-test',
+                mcu_constants: { MCU: 'stm32g0b1xx' },
+                last_stats: { freq: 64_000_000 },
+            },
+        } as unknown as PrinterState
+        const mcus = getters.getMcus(state, { getMcuTempSensor: () => null }, {} as RootState, {})
+
+        expect(mcus[0].freq).toBe(64_000_000)
+    })
+})

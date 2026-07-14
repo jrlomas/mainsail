@@ -78,6 +78,13 @@
                 </div>
                 <div class="atlas-table-scroll">
                     <v-simple-table dense class="atlas-trace-table">
+                        <colgroup>
+                            <col class="atlas-column-time" />
+                            <col class="atlas-column-severity" />
+                            <col class="atlas-column-source" />
+                            <col class="atlas-column-kind" />
+                            <col class="atlas-column-summary" />
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th>{{ $t('Panels.AtlasPanel.Time') }}</th>
@@ -227,11 +234,25 @@ export default class AtlasPanel extends Mixins(BaseMixin) {
 }
 .atlas-table-scroll {
     max-width: 100%;
-    max-height: 32rem;
+    max-height: 28rem;
     overflow: auto;
 }
 .atlas-trace-table ::v-deep table {
-    min-width: 860px;
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+}
+.atlas-trace-table ::v-deep .atlas-column-time {
+    width: 6.5rem;
+}
+.atlas-trace-table ::v-deep .atlas-column-severity {
+    width: 6.75rem;
+}
+.atlas-trace-table ::v-deep .atlas-column-source {
+    width: 18%;
+}
+.atlas-trace-table ::v-deep .atlas-column-kind {
+    width: 16%;
 }
 .atlas-trace-table ::v-deep th {
     position: sticky;
@@ -240,9 +261,11 @@ export default class AtlasPanel extends Mixins(BaseMixin) {
     background: var(--v-card-base);
     white-space: nowrap;
 }
-.atlas-trace-table ::v-deep th:last-child,
+.atlas-trace-table ::v-deep td {
+    vertical-align: top;
+    overflow-wrap: anywhere;
+}
 .atlas-event-summary {
-    min-width: 22rem;
     white-space: normal;
     overflow-wrap: anywhere;
 }

@@ -5,7 +5,10 @@
 
 import { AtlasEvent, AtlasTimeline, SEVERITY_ORDER, TimelineFilter } from './types'
 
-export const DEFAULT_VISIBLE_EVENT_LIMIT = 100
+// Keep the dashboard useful at a glance. Atlas retains the full diagnostic
+// history in its backend; the live dashboard intentionally renders only the
+// newest ten matching events so ordering/filter changes cannot grow the DOM.
+export const DEFAULT_VISIBLE_EVENT_LIMIT = 10
 
 export function severityRank(severity: string): number {
     return SEVERITY_ORDER[severity as keyof typeof SEVERITY_ORDER] ?? SEVERITY_ORDER.info

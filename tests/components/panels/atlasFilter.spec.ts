@@ -100,6 +100,11 @@ describe('atlasFilter', () => {
 
     it('bounds rendering to the newest events without changing their order', () => {
         const events = Array.from({ length: 150 }, (_, seq) => ev({ seq, mtime: seq }))
+        const defaults = limitEvents(events)
+        expect(defaults).toHaveLength(10)
+        expect(defaults[0].seq).toBe(140)
+        expect(defaults.at(-1)?.seq).toBe(149)
+
         const out = limitEvents(events, 100)
         expect(out).toHaveLength(100)
         expect(out[0].seq).toBe(50)
