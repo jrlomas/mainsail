@@ -5,6 +5,8 @@
 
 import { AtlasEvent, AtlasTimeline, SEVERITY_ORDER, TimelineFilter } from './types'
 
+export const DEFAULT_VISIBLE_EVENT_LIMIT = 100
+
 export function severityRank(severity: string): number {
     return SEVERITY_ORDER[severity as keyof typeof SEVERITY_ORDER] ?? SEVERITY_ORDER.info
 }
@@ -37,6 +39,14 @@ export function orderedEvents(events: AtlasEvent[]): AtlasEvent[] {
 export function selectEvents(timeline: AtlasTimeline, filter: TimelineFilter): AtlasEvent[] {
     const base = filter.ordered ? orderedEvents(timeline.events) : [...timeline.events].sort((a, b) => a.seq - b.seq)
     return base.filter((e) => passes(e, filter))
+}
+
+// Keep the newest portion of an already ordered selection. Atlas retains a
+// much deeper diagnostic history than the panel can render smoothly; slicing
+// from the end preserves the selected ordering while bounding DOM growth.
+export function limitEvents(events: AtlasEvent[], limit = DEFAULT_VISIBLE_EVENT_LIMIT): AtlasEvent[] {
+    const boundedLimit = Math.max(0, Math.floor(limit))
+    return boundedLimit === 0 ? [] : events.slice(-boundedLimit)
 }
 
 // The distinct subsystems / kinds / sources present — for populating the

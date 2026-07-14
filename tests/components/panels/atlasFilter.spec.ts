@@ -4,6 +4,7 @@ import {
     distinctSources,
     distinctSubsystems,
     errorCount,
+    limitEvents,
     orderedEvents,
     passes,
     selectEvents,
@@ -95,6 +96,15 @@ describe('atlasFilter', () => {
         const arrivalSel = selectEvents(TIMELINE, { ...defaultFilter(), ordered: false })
         expect(new Set(orderedSel.map((e) => e.seq))).toEqual(new Set(arrivalSel.map((e) => e.seq)))
         expect(arrivalSel.map((e) => e.seq)).toEqual([0, 1, 2, 3, 4]) // arrival = seq order
+    })
+
+    it('bounds rendering to the newest events without changing their order', () => {
+        const events = Array.from({ length: 150 }, (_, seq) => ev({ seq, mtime: seq }))
+        const out = limitEvents(events, 100)
+        expect(out).toHaveLength(100)
+        expect(out[0].seq).toBe(50)
+        expect(out.at(-1)?.seq).toBe(149)
+        expect(limitEvents(events, 0)).toEqual([])
     })
 
     it('reports distinct subsystems, kinds, and the error count', () => {

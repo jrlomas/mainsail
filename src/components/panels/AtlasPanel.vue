@@ -67,30 +67,42 @@
                 {{ $t('Panels.AtlasPanel.NoData') }}
             </p>
 
-            <v-simple-table v-else dense class="atlas-trace-table">
-                <thead>
-                    <tr>
-                        <th>{{ $t('Panels.AtlasPanel.Time') }}</th>
-                        <th>{{ $t('Panels.AtlasPanel.Severity') }}</th>
-                        <th>{{ $t('Panels.AtlasPanel.Source') }}</th>
-                        <th>{{ $t('Panels.AtlasPanel.Kind') }}</th>
-                        <th>{{ $t('Panels.AtlasPanel.Summary') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="event in visibleEvents" :key="event.seq" :class="rowClass(event)">
-                        <td class="monospace">{{ formatTime(event) }}</td>
-                        <td>
-                            <v-chip x-small label :color="severityColor(event.severity)">
-                                {{ event.severity }}
-                            </v-chip>
-                        </td>
-                        <td>{{ event.source }}</td>
-                        <td>{{ event.kind }}</td>
-                        <td>{{ event.summary }}</td>
-                    </tr>
-                </tbody>
-            </v-simple-table>
+            <div v-else class="atlas-table-region">
+                <div v-if="hiddenEventCount" class="text--secondary caption mb-1">
+                    {{
+                        $t('Panels.AtlasPanel.ShowingRecentEvents', {
+                            shown: visibleEvents.length,
+                            total: filteredEvents.length,
+                        })
+                    }}
+                </div>
+                <div class="atlas-table-scroll">
+                    <v-simple-table dense class="atlas-trace-table">
+                        <thead>
+                            <tr>
+                                <th>{{ $t('Panels.AtlasPanel.Time') }}</th>
+                                <th>{{ $t('Panels.AtlasPanel.Severity') }}</th>
+                                <th>{{ $t('Panels.AtlasPanel.Source') }}</th>
+                                <th>{{ $t('Panels.AtlasPanel.Kind') }}</th>
+                                <th>{{ $t('Panels.AtlasPanel.Summary') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="event in visibleEvents" :key="event.seq" :class="rowClass(event)">
+                                <td class="monospace">{{ formatTime(event) }}</td>
+                                <td>
+                                    <v-chip x-small label :color="severityColor(event.severity)">
+                                        {{ event.severity }}
+                                    </v-chip>
+                                </td>
+                                <td>{{ event.source }}</td>
+                                <td>{{ event.kind }}</td>
+                                <td class="atlas-event-summary">{{ event.summary }}</td>
+                            </tr>
+                        </tbody>
+                    </v-simple-table>
+                </div>
+            </div>
 
             <div v-if="timeline.notes.length" class="atlas-notes text--secondary caption mt-2">
                 <div v-for="(note, i) in timeline.notes" :key="i">· {{ note }}</div>
@@ -117,6 +129,7 @@ import {
     distinctSources,
     distinctSubsystems,
     errorCount,
+    limitEvents,
     selectEvents,
 } from '@/components/panels/Atlas/atlasFilter'
 import AtlasDiagnosisCard from '@/components/panels/Atlas/AtlasDiagnosisCard.vue'
@@ -149,8 +162,16 @@ export default class AtlasPanel extends Mixins(BaseMixin) {
         return buildDiagnosis((this.rawAtlas as Record<string, unknown>)?.diagnosis)
     }
 
-    get visibleEvents(): AtlasEvent[] {
+    get filteredEvents(): AtlasEvent[] {
         return selectEvents(this.timeline, this.filter)
+    }
+
+    get visibleEvents(): AtlasEvent[] {
+        return limitEvents(this.filteredEvents)
+    }
+
+    get hiddenEventCount(): number {
+        return this.filteredEvents.length - this.visibleEvents.length
     }
 
     get errorCount(): number {
@@ -200,6 +221,30 @@ export default class AtlasPanel extends Mixins(BaseMixin) {
 .atlas-trace-table .monospace {
     font-family: monospace;
     white-space: nowrap;
+}
+.atlas-table-region {
+    min-width: 0;
+}
+.atlas-table-scroll {
+    max-width: 100%;
+    max-height: 32rem;
+    overflow: auto;
+}
+.atlas-trace-table ::v-deep table {
+    min-width: 860px;
+}
+.atlas-trace-table ::v-deep th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--v-card-base);
+    white-space: nowrap;
+}
+.atlas-trace-table ::v-deep th:last-child,
+.atlas-event-summary {
+    min-width: 22rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 .atlas-row-error td {
     background-color: rgba(255, 82, 82, 0.08);

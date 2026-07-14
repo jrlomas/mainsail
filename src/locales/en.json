@@ -713,6 +713,7 @@
             "PreviewOnly": "Preview only. Atlas has not changed printer.cfg.",
             "SafetyConfirmation": "Safety-affecting change: confirmation is mandatory, and nothing has been applied.",
             "Severity": "Severity",
+            "ShowingRecentEvents": "Showing the latest {shown} of {total} matching events.",
             "Source": "Source",
             "Subsystem": "Subsystem",
             "Summary": "Summary",
