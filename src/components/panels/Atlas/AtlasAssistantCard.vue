@@ -4,6 +4,22 @@
             <v-icon small class="mr-2">{{ mdiRobotOutline }}</v-icon>
             {{ $t('Panels.AtlasPanel.Assistant') }}
             <v-spacer />
+            <v-tooltip v-if="enabled" bottom>
+                <template #activator="{ on, attrs }">
+                    <v-btn
+                        icon
+                        small
+                        class="mr-1"
+                        :aria-label="$t('Panels.AtlasPanel.ClearConversation')"
+                        :disabled="busy || !canClearConversation"
+                        v-bind="attrs"
+                        v-on="on"
+                        @click="clearConversation">
+                        <v-icon small>{{ mdiDeleteSweepOutline }}</v-icon>
+                    </v-btn>
+                </template>
+                <span>{{ $t('Panels.AtlasPanel.ClearConversation') }}</span>
+            </v-tooltip>
             <v-chip v-if="enabled" x-small label color="success">
                 {{ modelLabel }}
             </v-chip>
@@ -92,18 +108,18 @@
 <script lang="ts">
 import { Component, Mixins } from 'vue-property-decorator'
 import BaseMixin from '@/components/mixins/base'
-import { mdiFileEditOutline, mdiRobotOutline, mdiSend, mdiTextSearch } from '@mdi/js'
+import { mdiDeleteSweepOutline, mdiFileEditOutline, mdiRobotOutline, mdiSend, mdiTextSearch } from '@mdi/js'
 import type { AtlasConfigProposal } from '@/types/moonraker/AtlasRPC'
-
-type MessageRole = 'operator' | 'atlas'
-
-interface ChatMessage {
-    role: MessageRole
-    text: string
-}
+import {
+    hasConversationContent,
+    resetConversation,
+    type ChatMessage,
+    type MessageRole,
+} from '@/components/panels/Atlas/conversation'
 
 @Component
 export default class AtlasAssistantCard extends Mixins(BaseMixin) {
+    mdiDeleteSweepOutline = mdiDeleteSweepOutline
     mdiFileEditOutline = mdiFileEditOutline
     mdiRobotOutline = mdiRobotOutline
     mdiSend = mdiSend
@@ -143,6 +159,10 @@ export default class AtlasAssistantCard extends Mixins(BaseMixin) {
         return this.question.trim().length > 0
     }
 
+    get canClearConversation(): boolean {
+        return hasConversationContent(this)
+    }
+
     get proposalAlertType(): 'warning' | 'info' {
         return this.proposal?.needs_confirmation ? 'warning' : 'info'
     }
@@ -157,6 +177,11 @@ export default class AtlasAssistantCard extends Mixins(BaseMixin) {
             if (typeof message === 'string') return message
         }
         return this.$t('Panels.AtlasPanel.AssistantError').toString()
+    }
+
+    clearConversation(): void {
+        if (this.busy) return
+        resetConversation(this)
     }
 
     async ask(): Promise<void> {

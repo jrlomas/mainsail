@@ -151,6 +151,17 @@ export const getters: GetterTree<GuiState, RootState> = {
                 panels = panels.concat(missingPanels)
             }
 
+            // Atlas is the explanatory layer for the machine state shown by
+            // Temperatures. Keep it immediately above Temperature for both
+            // defaults and layouts saved before this ordering was introduced.
+            const atlasIndex = panels.findIndex((panel) => panel.name === 'atlas')
+            const temperatureIndex = panels.findIndex((panel) => panel.name === 'temperature')
+            if (atlasIndex >= 0 && temperatureIndex >= 0 && atlasIndex !== temperatureIndex - 1) {
+                const [atlas] = panels.splice(atlasIndex, 1)
+                const updatedTemperatureIndex = panels.findIndex((panel) => panel.name === 'temperature')
+                panels.splice(updatedTemperatureIndex, 0, atlas)
+            }
+
             if (onlyVisible) {
                 panels = panels.filter((element) => element.visible)
             }

@@ -36,8 +36,51 @@ describe('gui/getPanels', () => {
         )(state, moduleGetters, rootState)
 
         expect(getPanels('desktop', 1, true).map((panel) => panel.name)).not.toContain('atlas')
-        expect(getPanels('desktop', 2, true).map((panel) => panel.name)).toContain('atlas')
+        expect(getPanels('desktop', 2, true).map((panel) => panel.name)).toEqual(['atlas', 'temperature'])
         expect(getPanels('widescreen', 1, true).map((panel) => panel.name)).not.toContain('atlas')
-        expect(getPanels('widescreen', 2, true).map((panel) => panel.name)).toContain('atlas')
+        expect(getPanels('widescreen', 2, true).map((panel) => panel.name)).toEqual(['atlas', 'temperature'])
+    })
+
+    it('moves Atlas above Temperature in an existing saved layout', () => {
+        const state = getDefaultState()
+        state.dashboard.desktopLayout2 = [
+            { name: 'temperature', visible: true },
+            { name: 'atlas', visible: true },
+            { name: 'miniconsole', visible: true },
+        ]
+        const getAllPanels = getters.getAllPanelsFromViewport as (
+            state: GuiState
+        ) => (viewport: string) => GuiStateLayoutoption[]
+        const moduleGetters = {
+            getAllPossiblePanels: ['temperature', 'atlas', 'miniconsole'],
+            getAllPanelsFromViewport: getAllPanels(state),
+            'macros/getAllMacrogroups': [],
+        }
+        const rootState = { gui: { macros: { mode: 'simple' } } } as unknown as RootState
+        const getPanels = (
+            getters.getPanels as (
+                state: GuiState,
+                getters: typeof moduleGetters,
+                rootState: RootState
+            ) => (viewport: string, column: number, onlyVisible?: boolean) => GuiStateLayoutoption[]
+        )(state, moduleGetters, rootState)
+
+        expect(getPanels('desktop', 2, true).map((panel) => panel.name)).toEqual([
+            'atlas',
+            'temperature',
+            'miniconsole',
+        ])
+
+        state.dashboard.desktopLayout2 = [
+            { name: 'atlas', visible: true },
+            { name: 'miniconsole', visible: true },
+            { name: 'temperature', visible: true },
+        ]
+
+        expect(getPanels('desktop', 2, true).map((panel) => panel.name)).toEqual([
+            'miniconsole',
+            'atlas',
+            'temperature',
+        ])
     })
 })
