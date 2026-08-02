@@ -95,6 +95,7 @@
                                 min="0"
                                 max="168"
                                 step="0.25"
+                                :disabled="holdAfter"
                                 :suffix="$t('Panels.AmsHtQualifierPanel.Hours')"
                                 outlined
                                 dense />
@@ -345,7 +346,7 @@ export default class AmsHtQualifierCard extends Mixins(BaseMixin) {
 
     startDryer(): void {
         const target = Math.min(80, Math.max(30, Number(this.targetTemperature)))
-        const seconds = Math.round(Math.min(168, Math.max(0, Number(this.durationHours))) * 3600)
+        const seconds = this.holdAfter ? 0 : Math.round(Math.min(168, Math.max(0, Number(this.durationHours))) * 3600)
         if (!window.confirm(this.$t('Panels.AmsHtQualifierPanel.DryerConfirm', { target }).toString())) return
         this.sendGcode(
             `AMS_HT_DRYER_START TARGET=${target.toFixed(1)} DURATION=${seconds} HOLD=${this.holdAfter ? 1 : 0}`
