@@ -705,7 +705,7 @@
             "Fault": "Latched fault",
             "FollowerConfirm": "Start automatic filament-buffer following?",
             "Forward": "Forward",
-            "Headline": "AMS HT Qualification",
+            "Headline": "AMS HT",
             "HeaterNtc": "Heater NTC",
             "HeaterPower": "Heater allocation",
             "HoldAfter": "Hold after timer",

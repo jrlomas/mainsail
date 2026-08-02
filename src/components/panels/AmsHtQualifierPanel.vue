@@ -91,7 +91,7 @@
                         <tbody>
                             <tr>
                                 <th>{{ $t('Panels.AmsHtQualifierPanel.State') }}</th>
-                                <td>{{ value(model.dryer && model.dryer.state) }}</td>
+                                <td>{{ displayState(model.dryer && model.dryer.state) }}</td>
                             </tr>
                             <tr>
                                 <th>{{ $t('Panels.AmsHtQualifierPanel.Remaining') }}</th>
@@ -111,7 +111,7 @@
                             </tr>
                             <tr>
                                 <th>{{ $t('Panels.AmsHtQualifierPanel.Vents') }}</th>
-                                <td>{{ value(model.dryer && model.dryer.vent_position) }}</td>
+                                <td>{{ displayState(model.dryer && model.dryer.vent_position) }}</td>
                             </tr>
                             <tr>
                                 <th>{{ $t('Panels.AmsHtQualifierPanel.Door') }}</th>
@@ -329,6 +329,11 @@ export default class AmsHtQualifierPanel extends Mixins(BaseMixin) {
 
     value(value: unknown): string {
         return value === undefined || value === null || value === '' ? '—' : String(value)
+    }
+
+    displayState(value: string | null | undefined): string {
+        if (!value) return '—'
+        return value.charAt(0).toUpperCase() + value.slice(1)
     }
 
     integer(value: number | null | undefined): string {
