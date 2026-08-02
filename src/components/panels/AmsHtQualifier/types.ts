@@ -60,6 +60,7 @@ export interface AmsHtQualifierStatus {
     last_command?: string
     last_result?: string
     last_error?: string
+    follower_state?: string
     dryer?: AmsHtDryerStatus
     sensors?: AmsHtSensorStatus
     motor?: AmsHtMotorStatus

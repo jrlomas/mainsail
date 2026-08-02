@@ -31,10 +31,22 @@ export interface AmsHtMotionActions {
     unload: boolean
 }
 
+export interface AmsHtFollowerActions {
+    start: boolean
+    stop: boolean
+}
+
 export function getAmsHtMotionActions(hubFilamentPresent?: boolean | null): AmsHtMotionActions {
     return {
         load: hubFilamentPresent === false,
         unload: hubFilamentPresent === true,
+    }
+}
+
+export function getAmsHtFollowerActions(state?: string): AmsHtFollowerActions {
+    return {
+        start: state === 'disabled',
+        stop: state === 'forward' || state === 'reverse',
     }
 }
 

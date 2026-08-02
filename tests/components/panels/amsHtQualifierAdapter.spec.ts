@@ -4,6 +4,7 @@ import {
     buildAmsHtQualifierModels,
     commandForAmsHt,
     getAmsHtDryerActions,
+    getAmsHtFollowerActions,
     getAmsHtMotionActions,
 } from '@/components/panels/AmsHtQualifier/adapter'
 
@@ -81,6 +82,13 @@ describe('AMS HT qualifier adapter', () => {
         expect(getAmsHtMotionActions(false)).toEqual({ load: true, unload: false })
         expect(getAmsHtMotionActions(true)).toEqual({ load: false, unload: true })
         expect(getAmsHtMotionActions(undefined)).toEqual({ load: false, unload: false })
+    })
+
+    it('offers only the complementary follower action', () => {
+        expect(getAmsHtFollowerActions('disabled')).toEqual({ start: true, stop: false })
+        expect(getAmsHtFollowerActions('forward')).toEqual({ start: false, stop: true })
+        expect(getAmsHtFollowerActions('reverse')).toEqual({ start: false, stop: true })
+        expect(getAmsHtFollowerActions(undefined)).toEqual({ start: false, stop: false })
     })
 
     it('routes global and per-card commands to the selected qualifier instance', () => {
