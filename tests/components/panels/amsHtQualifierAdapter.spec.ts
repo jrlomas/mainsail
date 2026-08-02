@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
     buildAmsHtQualifierModel,
     buildAmsHtQualifierModels,
+    commandForAmsHt,
     getAmsHtDryerActions,
+    getAmsHtMotionActions,
 } from '@/components/panels/AmsHtQualifier/adapter'
 
 describe('AMS HT qualifier adapter', () => {
@@ -73,5 +75,21 @@ describe('AMS HT qualifier adapter', () => {
             stop: false,
             clearFault: true,
         })
+    })
+
+    it('uses the Hub HES as the load and unload source of truth', () => {
+        expect(getAmsHtMotionActions(false)).toEqual({ load: true, unload: false })
+        expect(getAmsHtMotionActions(true)).toEqual({ load: false, unload: true })
+        expect(getAmsHtMotionActions(undefined)).toEqual({ load: false, unload: false })
+    })
+
+    it('routes global and per-card commands to the selected qualifier instance', () => {
+        const legacy = buildAmsHtQualifierModel({ ams_ht_qualifier: {} } as never)
+        const named = buildAmsHtQualifierModel({
+            'ams_ht_qualifier left': { instance: 'left' },
+        } as never)
+
+        expect(commandForAmsHt(legacy, 'AMS_HT_MOTION_STOP')).toBe('AMS_HT_MOTION_STOP')
+        expect(commandForAmsHt(named, 'AMS_HT_MOTION_STOP')).toBe('AMS_HT_MOTION_STOP AMS=left')
     })
 })

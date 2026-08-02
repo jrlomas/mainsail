@@ -26,6 +26,22 @@ export function getAmsHtDryerActions(state?: string, fault?: string): AmsHtDryer
     }
 }
 
+export interface AmsHtMotionActions {
+    load: boolean
+    unload: boolean
+}
+
+export function getAmsHtMotionActions(hubFilamentPresent?: boolean | null): AmsHtMotionActions {
+    return {
+        load: hubFilamentPresent === false,
+        unload: hubFilamentPresent === true,
+    }
+}
+
+export function commandForAmsHt(model: AmsHtQualifierModel, command: string): string {
+    return model.instance ? `${command} AMS=${model.instance}` : command
+}
+
 function titleFromInstance(instance: string): string {
     return instance.replace(/[_-]+/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
 }

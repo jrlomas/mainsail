@@ -43,6 +43,7 @@
                 <v-tab>{{ $t('Panels.AmsHtQualifierPanel.Dryer') }}</v-tab>
                 <v-tab>{{ $t('Panels.AmsHtQualifierPanel.Motion') }}</v-tab>
                 <v-tab>{{ $t('Panels.AmsHtQualifierPanel.Diagnostics') }}</v-tab>
+                <v-tab>{{ $t('Panels.AmsHtQualifierPanel.Rfid') }}</v-tab>
             </v-tabs>
             <v-tabs-items v-model="tab">
                 <v-tab-item>
@@ -77,7 +78,7 @@
                     </v-row>
                     <v-simple-table dense>
                         <tbody>
-                            <tr class="dryer-state-row">
+                            <tr class="primary-state-row">
                                 <th>{{ $t('Panels.AmsHtQualifierPanel.State') }}</th>
                                 <td>{{ displayState(dryerState) }}</td>
                             </tr>
@@ -134,31 +135,8 @@
                 </v-tab-item>
 
                 <v-tab-item>
-                    <div class="d-flex flex-wrap mt-3">
-                        <v-btn
-                            color="warning"
-                            class="mr-2 mb-2"
-                            :disabled="!canCommand"
-                            @click="confirmCommand('LoadConfirm', 'AMS_HT_LOAD BAY=0')">
-                            {{ $t('Panels.AmsHtQualifierPanel.Load') }}
-                        </v-btn>
-                        <v-btn
-                            color="warning"
-                            class="mr-2 mb-2"
-                            :disabled="!canCommand"
-                            @click="confirmCommand('UnloadConfirm', 'AMS_HT_UNLOAD')">
-                            {{ $t('Panels.AmsHtQualifierPanel.Unload') }}
-                        </v-btn>
-                        <v-btn
-                            color="error"
-                            class="mb-2"
-                            :disabled="!canCommand"
-                            @click="sendGcode('AMS_HT_MOTION_STOP')">
-                            {{ $t('Panels.AmsHtQualifierPanel.StopMotion') }}
-                        </v-btn>
-                    </div>
-                    <v-row dense>
-                        <v-col cols="12" sm="5">
+                    <v-row dense class="mt-2">
+                        <v-col cols="12">
                             <v-select
                                 v-model="followDirection"
                                 :items="directionItems"
@@ -166,17 +144,13 @@
                                 outlined
                                 dense />
                         </v-col>
-                        <v-col cols="12" sm="7" class="d-flex align-center">
-                            <v-btn class="mr-2" :disabled="!canCommand" @click="startFollower">
-                                {{ $t('Panels.AmsHtQualifierPanel.StartFollower') }}
-                            </v-btn>
-                            <v-btn :disabled="!canCommand" @click="sendGcode('AMS_HT_FOLLOW ENABLE=0')">
-                                {{ $t('Panels.AmsHtQualifierPanel.StopFollower') }}
-                            </v-btn>
-                        </v-col>
                     </v-row>
                     <v-simple-table dense>
                         <tbody>
+                            <tr class="primary-state-row">
+                                <th>{{ $t('Panels.AmsHtQualifierPanel.FilamentState') }}</th>
+                                <td>{{ filamentState }}</td>
+                            </tr>
                             <tr>
                                 <th>{{ $t('Panels.AmsHtQualifierPanel.Motor') }}</th>
                                 <td>{{ motorState }}</td>
@@ -206,6 +180,30 @@
                             </tr>
                         </tbody>
                     </v-simple-table>
+                    <div class="d-flex flex-wrap mt-4">
+                        <v-btn
+                            v-if="motionActions.load"
+                            color="warning"
+                            class="mr-2 mb-2"
+                            :disabled="!canCommand"
+                            @click="confirmCommand('LoadConfirm', 'AMS_HT_LOAD BAY=0')">
+                            {{ $t('Panels.AmsHtQualifierPanel.Load') }}
+                        </v-btn>
+                        <v-btn
+                            v-if="motionActions.unload"
+                            color="warning"
+                            class="mr-2 mb-2"
+                            :disabled="!canCommand"
+                            @click="confirmCommand('UnloadConfirm', 'AMS_HT_UNLOAD')">
+                            {{ $t('Panels.AmsHtQualifierPanel.Unload') }}
+                        </v-btn>
+                        <v-btn class="mr-2 mb-2" :disabled="!canCommand" @click="startFollower">
+                            {{ $t('Panels.AmsHtQualifierPanel.StartFollower') }}
+                        </v-btn>
+                        <v-btn class="mb-2" :disabled="!canCommand" @click="sendGcode('AMS_HT_FOLLOW ENABLE=0')">
+                            {{ $t('Panels.AmsHtQualifierPanel.StopFollower') }}
+                        </v-btn>
+                    </div>
                 </v-tab-item>
 
                 <v-tab-item>
@@ -255,11 +253,41 @@
                             </tr>
                         </tbody>
                     </v-simple-table>
-                    <div class="d-flex align-center mt-3">
-                        <v-btn class="mr-3" :disabled="!canCommand" @click="sendGcode('AMS_HT_RFID_SCAN')">
+                </v-tab-item>
+
+                <v-tab-item>
+                    <v-simple-table dense class="mt-2">
+                        <tbody>
+                            <tr>
+                                <th>{{ $t('Panels.AmsHtQualifierPanel.RfidResult') }}</th>
+                                <td>{{ displayState(model.rfid && model.rfid.result) }}</td>
+                            </tr>
+                            <tr>
+                                <th>{{ $t('Panels.AmsHtQualifierPanel.RfidVersion') }}</th>
+                                <td>{{ hexadecimal(model.rfid && model.rfid.version, 2) }}</td>
+                            </tr>
+                            <tr>
+                                <th>{{ $t('Panels.AmsHtQualifierPanel.RfidUid') }}</th>
+                                <td>{{ value(model.rfid && model.rfid.uid) }}</td>
+                            </tr>
+                            <tr>
+                                <th>{{ $t('Panels.AmsHtQualifierPanel.RfidUidLength') }}</th>
+                                <td>{{ integer(model.rfid && model.rfid.uid_length) }}</td>
+                            </tr>
+                            <tr>
+                                <th>{{ $t('Panels.AmsHtQualifierPanel.RfidSak') }}</th>
+                                <td>{{ hexadecimal(model.rfid && model.rfid.sak, 2) }}</td>
+                            </tr>
+                            <tr>
+                                <th>{{ $t('Panels.AmsHtQualifierPanel.RfidAtqa') }}</th>
+                                <td>{{ hexadecimal(model.rfid && model.rfid.atqa, 4) }}</td>
+                            </tr>
+                        </tbody>
+                    </v-simple-table>
+                    <div class="d-flex flex-wrap mt-4">
+                        <v-btn class="mb-2" :disabled="!canCommand" @click="sendGcode('AMS_HT_RFID_SCAN')">
                             {{ $t('Panels.AmsHtQualifierPanel.ScanRfid') }}
                         </v-btn>
-                        <span>{{ rfidSummary }}</span>
                     </div>
                 </v-tab-item>
             </v-tabs-items>
@@ -273,8 +301,11 @@ import { mdiRefresh } from '@mdi/js'
 import BaseMixin from '@/components/mixins/base'
 import {
     AmsHtDryerActions,
+    AmsHtMotionActions,
     AmsHtQualifierModel,
+    commandForAmsHt,
     getAmsHtDryerActions,
+    getAmsHtMotionActions,
 } from '@/components/panels/AmsHtQualifier/adapter'
 
 @Component
@@ -326,16 +357,16 @@ export default class AmsHtQualifierCard extends Mixins(BaseMixin) {
             : this.$t('Panels.AmsHtQualifierPanel.Reverse').toString()
     }
 
-    get rfidSummary(): string {
-        const rfid = this.model.rfid
-        if (!rfid?.result) return this.$t('Panels.AmsHtQualifierPanel.NoRfidResult').toString()
-        if (rfid.uid) return `${rfid.result}: ${rfid.uid}`
-        return rfid.result
+    get motionActions(): AmsHtMotionActions {
+        return getAmsHtMotionActions(this.model.sensors?.hub_filament_present)
+    }
+
+    get filamentState(): string {
+        return this.booleanState(this.model.sensors?.hub_filament_present, 'Loaded', 'Unloaded')
     }
 
     sendGcode(command: string): void {
-        const selector = this.model.instance ? ` AMS=${this.model.instance}` : ''
-        this.$store.dispatch('printer/sendGcode', `${command}${selector}`)
+        this.$store.dispatch('printer/sendGcode', commandForAmsHt(this.model, command))
     }
 
     confirmCommand(messageKey: string, command: string): void {
@@ -362,7 +393,12 @@ export default class AmsHtQualifierCard extends Mixins(BaseMixin) {
 
     displayState(value: string | null | undefined): string {
         if (!value) return '—'
-        return value.charAt(0).toUpperCase() + value.slice(1)
+        return value.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
+    }
+
+    hexadecimal(value: number | null | undefined, width: number): string {
+        if (value === undefined || value === null) return '—'
+        return `0x${value.toString(16).toUpperCase().padStart(width, '0')}`
     }
 
     integer(value: number | null | undefined): string {
@@ -402,8 +438,8 @@ export default class AmsHtQualifierCard extends Mixins(BaseMixin) {
 </script>
 
 <style scoped>
-.dryer-state-row th,
-.dryer-state-row td {
+.primary-state-row th,
+.primary-state-row td {
     font-size: 1.25rem !important;
     font-weight: 500;
     text-align: left;
