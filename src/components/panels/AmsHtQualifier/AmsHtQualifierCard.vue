@@ -20,35 +20,6 @@
                 {{ $t('Panels.AmsHtQualifierPanel.Fault') }}: {{ model.dryer.fault }}
             </v-alert>
 
-            <div class="mb-4 text-left">
-                <div class="text-caption text--secondary">{{ $t('Panels.AmsHtQualifierPanel.State') }}</div>
-                <div class="text-h4">{{ displayState(dryerState) }}</div>
-                <div class="d-flex flex-wrap mt-2">
-                    <v-btn
-                        v-if="showStartDryer"
-                        color="error"
-                        class="mr-2 mb-2"
-                        :disabled="!canCommand"
-                        @click="startDryer">
-                        {{ $t('Panels.AmsHtQualifierPanel.StartDryer') }}
-                    </v-btn>
-                    <v-btn
-                        v-if="showStopDryer"
-                        class="mr-2 mb-2"
-                        :disabled="!canCommand"
-                        @click="sendGcode('AMS_HT_DRYER_STOP')">
-                        {{ $t('Panels.AmsHtQualifierPanel.StopCooldown') }}
-                    </v-btn>
-                    <v-btn
-                        v-if="hasFault"
-                        class="mb-2"
-                        :disabled="!canCommand"
-                        @click="sendGcode('AMS_HT_CLEAR_FAULT')">
-                        {{ $t('Panels.AmsHtQualifierPanel.ClearFault') }}
-                    </v-btn>
-                </div>
-            </div>
-
             <v-row dense>
                 <v-col cols="6" sm="3">
                     <div class="text-caption text--secondary">{{ $t('Panels.AmsHtQualifierPanel.Chamber') }}</div>
@@ -106,6 +77,10 @@
                     </v-row>
                     <v-simple-table dense>
                         <tbody>
+                            <tr class="dryer-state-row">
+                                <th>{{ $t('Panels.AmsHtQualifierPanel.State') }}</th>
+                                <td>{{ displayState(dryerState) }}</td>
+                            </tr>
                             <tr>
                                 <th>{{ $t('Panels.AmsHtQualifierPanel.Remaining') }}</th>
                                 <td>{{ duration(model.dryer && model.dryer.remaining) }}</td>
@@ -132,6 +107,30 @@
                             </tr>
                         </tbody>
                     </v-simple-table>
+                    <div class="d-flex flex-wrap mt-4">
+                        <v-btn
+                            v-if="showStartDryer"
+                            color="error"
+                            class="mr-2 mb-2"
+                            :disabled="!canCommand"
+                            @click="startDryer">
+                            {{ $t('Panels.AmsHtQualifierPanel.StartDryer') }}
+                        </v-btn>
+                        <v-btn
+                            v-if="showStopDryer"
+                            class="mr-2 mb-2"
+                            :disabled="!canCommand"
+                            @click="sendGcode('AMS_HT_DRYER_STOP')">
+                            {{ $t('Panels.AmsHtQualifierPanel.StopCooldown') }}
+                        </v-btn>
+                        <v-btn
+                            v-if="hasFault"
+                            class="mb-2"
+                            :disabled="!canCommand"
+                            @click="sendGcode('AMS_HT_CLEAR_FAULT')">
+                            {{ $t('Panels.AmsHtQualifierPanel.ClearFault') }}
+                        </v-btn>
+                    </div>
                 </v-tab-item>
 
                 <v-tab-item>
@@ -401,3 +400,12 @@ export default class AmsHtQualifierCard extends Mixins(BaseMixin) {
     }
 }
 </script>
+
+<style scoped>
+.dryer-state-row th,
+.dryer-state-row td {
+    font-size: 1.25rem !important;
+    font-weight: 500;
+    text-align: left;
+}
+</style>
