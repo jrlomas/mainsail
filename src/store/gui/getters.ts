@@ -103,6 +103,10 @@ export const getters: GetterTree<GuiState, RootState> = {
             allPanels = allPanels.filter((name) => name !== 'oams')
         }
 
+        if (!rootState.printer?.ams_ht_qualifier) {
+            allPanels = allPanels.filter((name) => name !== 'ams-ht-qualifier')
+        }
+
         // remove mmu panel, if no Happy Hare exists in Klipper
         if (!rootState.printer?.mmu) {
             allPanels = allPanels.filter((name) => name !== 'mmu')

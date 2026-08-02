@@ -111,6 +111,7 @@ export const maxGcodeHistory = 50
  */
 export const allDashboardPanels = [
     'afc',
+    'ams-ht-qualifier',
     'atlas',
     'oams',
     'toolhead-control',

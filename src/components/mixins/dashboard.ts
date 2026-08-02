@@ -16,6 +16,7 @@ import {
     mdiWebcam,
     mdiAdjust,
     mdiMulticast,
+    mdiTuneVariant,
 } from '@mdi/js'
 import { afcIconLogo } from '@/plugins/afcIcons'
 
@@ -79,6 +80,8 @@ export default class DashboardMixin extends BaseMixin {
                 return mdiMulticast
             case 'afc':
                 return afcIconLogo
+            case 'ams-ht-qualifier':
+                return mdiTuneVariant
 
             default:
                 return mdiInformation

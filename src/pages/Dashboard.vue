@@ -83,6 +83,7 @@
 import Component from 'vue-class-component'
 import { Mixins } from 'vue-property-decorator'
 import AfcPanel from '@/components/panels/AfcPanel.vue'
+import AmsHtQualifierPanel from '@/components/panels/AmsHtQualifierPanel.vue'
 import AtlasPanel from '@/components/panels/AtlasPanel.vue'
 import ExtruderControlPanel from '@/components/panels/ExtruderControlPanel.vue'
 import DashboardMixin from '@/components/mixins/dashboard'
@@ -105,6 +106,7 @@ import WebcamPanel from '@/components/panels/WebcamPanel.vue'
 @Component({
     components: {
         AfcPanel,
+        AmsHtQualifierPanel,
         AtlasPanel,
         ExtruderControlPanel,
         KlippyStatePanel,
