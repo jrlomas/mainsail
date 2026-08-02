@@ -103,7 +103,10 @@ export const getters: GetterTree<GuiState, RootState> = {
             allPanels = allPanels.filter((name) => name !== 'oams')
         }
 
-        if (!rootState.printer?.ams_ht_qualifier) {
+        const hasAmsHtQualifier = Object.keys(rootState.printer || {}).some(
+            (name) => name === 'ams_ht_qualifier' || name.startsWith('ams_ht_qualifier ')
+        )
+        if (!hasAmsHtQualifier) {
             allPanels = allPanels.filter((name) => name !== 'ams-ht-qualifier')
         }
 

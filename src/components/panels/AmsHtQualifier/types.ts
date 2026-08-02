@@ -51,6 +51,9 @@ export interface AmsHtRfidStatus {
 }
 
 export interface AmsHtQualifierStatus {
+    name?: string
+    instance?: string | null
+    object_name?: string
     connected?: boolean
     mcu?: string
     telemetry_age?: number | null
