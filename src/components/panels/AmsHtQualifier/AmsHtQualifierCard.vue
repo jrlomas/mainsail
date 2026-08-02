@@ -319,6 +319,7 @@ import {
     commandForAmsHt,
     getAmsHtDryerActions,
     getAmsHtFollowerActions,
+    getAmsHtFollowerState,
     getAmsHtMotionActions,
 } from '@/components/panels/AmsHtQualifier/adapter'
 
@@ -376,15 +377,18 @@ export default class AmsHtQualifierCard extends Mixins(BaseMixin) {
     }
 
     get followerActions(): AmsHtFollowerActions {
-        return getAmsHtFollowerActions(this.model.follower_state)
+        return getAmsHtFollowerActions(this.followerStateValue)
+    }
+
+    get followerStateValue(): string {
+        return getAmsHtFollowerState(this.model)
     }
 
     get followerState(): string {
-        if (!this.model.follower_state) return '—'
         const key =
-            this.model.follower_state === 'disabled'
+            this.followerStateValue === 'disabled'
                 ? 'Disabled'
-                : this.model.follower_state === 'forward'
+                : this.followerStateValue === 'forward'
                   ? 'Forward'
                   : 'Reverse'
         return this.$t(`Panels.AmsHtQualifierPanel.${key}`).toString()

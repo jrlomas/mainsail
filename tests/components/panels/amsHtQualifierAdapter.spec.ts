@@ -5,6 +5,7 @@ import {
     commandForAmsHt,
     getAmsHtDryerActions,
     getAmsHtFollowerActions,
+    getAmsHtFollowerState,
     getAmsHtMotionActions,
 } from '@/components/panels/AmsHtQualifier/adapter'
 
@@ -89,6 +90,16 @@ describe('AMS HT qualifier adapter', () => {
         expect(getAmsHtFollowerActions('forward')).toEqual({ start: false, stop: true })
         expect(getAmsHtFollowerActions('reverse')).toEqual({ start: false, stop: true })
         expect(getAmsHtFollowerActions(undefined)).toEqual({ start: false, stop: false })
+    })
+
+    it('derives follower state from legacy accepted action results', () => {
+        const model = buildAmsHtQualifierModel({
+            ams_ht_qualifier: { last_command: 'following_reverse', last_result: 'accepted' },
+        } as never)
+
+        expect(getAmsHtFollowerState(model)).toBe('reverse')
+        expect(getAmsHtFollowerState({ ...model, follower_state: 'forward' })).toBe('forward')
+        expect(getAmsHtFollowerState({ ...model, last_command: 'dryer_start' })).toBe('disabled')
     })
 
     it('routes global and per-card commands to the selected qualifier instance', () => {

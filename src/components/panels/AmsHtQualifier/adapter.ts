@@ -50,6 +50,15 @@ export function getAmsHtFollowerActions(state?: string): AmsHtFollowerActions {
     }
 }
 
+export function getAmsHtFollowerState(model: AmsHtQualifierModel): string {
+    if (model.follower_state) return model.follower_state
+    if (model.last_result === 'accepted') {
+        if (model.last_command === 'following_forward' || model.last_command === 'loading') return 'forward'
+        if (model.last_command === 'following_reverse') return 'reverse'
+    }
+    return 'disabled'
+}
+
 export function commandForAmsHt(model: AmsHtQualifierModel, command: string): string {
     return model.instance ? `${command} AMS=${model.instance}` : command
 }
