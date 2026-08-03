@@ -33,6 +33,9 @@ export interface AmsHtSensorStatus {
     vent_retry_count?: number
     vent1_error?: boolean
     vent2_error?: boolean
+    f1s_overcurrent_level?: boolean
+    f1s_overcurrent_active?: boolean
+    f1s_overcurrent_trips?: number
 }
 
 export interface AmsHtMotorStatus {

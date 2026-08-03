@@ -311,6 +311,27 @@
                                 </td>
                             </tr>
                             <tr>
+                                <th>{{ $t('Panels.AmsHtQualifierPanel.F1sOvercurrent') }}</th>
+                                <td>
+                                    {{
+                                        booleanState(
+                                            model.sensors && model.sensors.f1s_overcurrent_active,
+                                            'Active',
+                                            'Clear'
+                                        )
+                                    }}
+                                    · PA5={{
+                                        booleanState(
+                                            model.sensors && model.sensors.f1s_overcurrent_level,
+                                            'High',
+                                            'Low'
+                                        )
+                                    }}
+                                    · {{ $t('Panels.AmsHtQualifierPanel.Trips') }}:
+                                    {{ integer(model.sensors && model.sensors.f1s_overcurrent_trips) }}
+                                </td>
+                            </tr>
+                            <tr>
                                 <th>{{ $t('Panels.AmsHtQualifierPanel.Hub') }}</th>
                                 <td>
                                     {{
