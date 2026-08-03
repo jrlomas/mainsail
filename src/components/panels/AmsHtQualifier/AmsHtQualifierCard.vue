@@ -19,6 +19,10 @@
             <v-alert v-if="hasFault" dense text type="error">
                 {{ $t('Panels.AmsHtQualifierPanel.Fault') }}: {{ model.dryer.fault }}
             </v-alert>
+            <v-alert v-if="ventErrorLabels.length" dense text type="warning">
+                {{ $t('Panels.AmsHtQualifierPanel.VentActuationWarning') }}:
+                {{ ventErrorLabels.join(', ') }}
+            </v-alert>
 
             <v-row dense>
                 <v-col cols="6" sm="3">
@@ -164,6 +168,44 @@
                                 <td>
                                     {{ decimal(model.motor && model.motor.rpm) }} RPM /
                                     {{ decimal(model.motor && model.motor.frequency) }} Hz
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>{{ $t('Panels.AmsHtQualifierPanel.Vent1Hes') }}</th>
+                                <td>
+                                    {{
+                                        ventSensorState(
+                                            model.sensors && model.sensors.vent1_open,
+                                            model.sensors && model.sensors.vent1_counts,
+                                            model.sensors && model.sensors.vent1_error
+                                        )
+                                    }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>{{ $t('Panels.AmsHtQualifierPanel.Vent2Hes') }}</th>
+                                <td>
+                                    {{
+                                        ventSensorState(
+                                            model.sensors && model.sensors.vent2_open,
+                                            model.sensors && model.sensors.vent2_counts,
+                                            model.sensors && model.sensors.vent2_error
+                                        )
+                                    }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <th>{{ $t('Panels.AmsHtQualifierPanel.VentVerification') }}</th>
+                                <td>
+                                    {{
+                                        booleanState(
+                                            model.sensors && model.sensors.vent_sensors_valid,
+                                            'Valid',
+                                            'Settling'
+                                        )
+                                    }}
+                                    · {{ $t('Panels.AmsHtQualifierPanel.Retries') }}:
+                                    {{ integer(model.sensors && model.sensors.vent_retry_count) }}
                                 </td>
                             </tr>
                             <tr>
@@ -398,6 +440,13 @@ export default class AmsHtQualifierCard extends Mixins(BaseMixin) {
         return this.booleanState(this.model.sensors?.hub_filament_present, 'Loaded', 'Unloaded')
     }
 
+    get ventErrorLabels(): string[] {
+        const labels: string[] = []
+        if (this.model.sensors?.vent1_error) labels.push(this.$t('Panels.AmsHtQualifierPanel.Vent1').toString())
+        if (this.model.sensors?.vent2_error) labels.push(this.$t('Panels.AmsHtQualifierPanel.Vent2').toString())
+        return labels
+    }
+
     sendGcode(command: string): void {
         this.$store.dispatch('printer/sendGcode', commandForAmsHt(this.model, command))
     }
@@ -466,6 +515,16 @@ export default class AmsHtQualifierCard extends Mixins(BaseMixin) {
     sensorState(state: boolean | null | undefined, counts: number | null | undefined): string {
         const label = this.booleanState(state, 'Present', 'Clear')
         return `${label} (${this.integer(counts)})`
+    }
+
+    ventSensorState(
+        state: boolean | null | undefined,
+        counts: number | null | undefined,
+        error: boolean | null | undefined
+    ): string {
+        const position = this.booleanState(state, 'Open', 'Closed')
+        const warning = error ? ` · ${this.$t('Panels.AmsHtQualifierPanel.ActuationFailed')}` : ''
+        return `${position} (${this.integer(counts)})${warning}`
     }
 }
 </script>

@@ -683,6 +683,7 @@
             "WeightUsed": "{weight}g used"
         },
         "AmsHtQualifierPanel": {
+            "ActuationFailed": "actuation failed",
             "Buffer": "Filament buffer",
             "Chamber": "Chamber",
             "Clear": "Clear",
@@ -727,6 +728,7 @@
             "Present": "Filament present",
             "Refresh": "Refresh AMS HT telemetry",
             "Remaining": "Time remaining",
+            "Retries": "Retries",
             "Reverse": "Reverse",
             "Rfid": "RFID",
             "RfidAtqa": "ATQA",
@@ -736,6 +738,7 @@
             "RfidUidLength": "UID length",
             "RfidVersion": "Reader version",
             "ScanRfid": "Scan RFID",
+            "Settling": "Settling",
             "Speed": "Measured speed",
             "Stale": "AMS HT telemetry is stale; controls are disabled.",
             "StartDryer": "Start dryer",
@@ -751,7 +754,14 @@
             "Unload": "Unload filament",
             "UnloadConfirm": "Run the single-bay unload sequence?",
             "Unloaded": "Unloaded",
-            "Vents": "Vent position"
+            "Valid": "Valid",
+            "Vent1": "Vent 1",
+            "Vent1Hes": "Vent 1 position HES",
+            "Vent2": "Vent 2",
+            "Vent2Hes": "Vent 2 position HES",
+            "VentActuationWarning": "Non-fatal vent actuation warning",
+            "Vents": "Vent position",
+            "VentVerification": "Vent verification"
         },
         "AtlasPanel": {
             "Ask": "Ask Atlas",

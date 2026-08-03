@@ -24,6 +24,15 @@ export interface AmsHtSensorStatus {
     door_closed?: boolean
     encoder_clicks?: number
     buffer?: number
+    vent1_counts?: number
+    vent1_open?: boolean
+    vent2_counts?: number
+    vent2_open?: boolean
+    vent_sensors_valid?: boolean
+    vent_error_mask?: number
+    vent_retry_count?: number
+    vent1_error?: boolean
+    vent2_error?: boolean
 }
 
 export interface AmsHtMotorStatus {
