@@ -380,6 +380,7 @@ import {
     AmsHtMotionActions,
     AmsHtQualifierModel,
     commandForAmsHt,
+    formatAmsHtTemperature,
     getAmsHtDryerActions,
     getAmsHtFollowerActions,
     getAmsHtFollowerState,
@@ -513,7 +514,7 @@ export default class AmsHtQualifierCard extends Mixins(BaseMixin) {
     }
 
     temperature(value: number | null | undefined): string {
-        return value === undefined || value === null ? '—' : `${value.toFixed(1)} °C`
+        return formatAmsHtTemperature(value)
     }
 
     percent(value: number | null | undefined): string {

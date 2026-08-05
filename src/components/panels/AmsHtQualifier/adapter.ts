@@ -63,6 +63,10 @@ export function commandForAmsHt(model: AmsHtQualifierModel, command: string): st
     return model.instance ? `${command} AMS=${model.instance}` : command
 }
 
+export function formatAmsHtTemperature(value: unknown): string {
+    return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)} °C` : '—'
+}
+
 function titleFromInstance(instance: string): string {
     return instance.replace(/[_-]+/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
 }

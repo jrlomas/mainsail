@@ -3,6 +3,7 @@ import {
     buildAmsHtQualifierModel,
     buildAmsHtQualifierModels,
     commandForAmsHt,
+    formatAmsHtTemperature,
     getAmsHtDryerActions,
     getAmsHtFollowerActions,
     getAmsHtFollowerState,
@@ -66,6 +67,13 @@ describe('AMS HT qualifier adapter', () => {
         } as never)
 
         expect(model.stale).toBe(true)
+    })
+
+    it('distinguishes a valid zero temperature from missing data', () => {
+        expect(formatAmsHtTemperature(0)).toBe('0.0 °C')
+        expect(formatAmsHtTemperature(null)).toBe('—')
+        expect(formatAmsHtTemperature(undefined)).toBe('—')
+        expect(formatAmsHtTemperature(Number.NaN)).toBe('—')
     })
 
     it('offers only state-valid dryer actions and allows restart from cooldown', () => {

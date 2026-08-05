@@ -2,8 +2,10 @@ export interface AmsHtDryerStatus {
     state?: string
     fault?: string
     target?: number
-    heater_temperature?: number
-    chamber_temperature?: number
+    heater_temperature_valid?: boolean
+    heater_temperature?: number | null
+    chamber_temperature_valid?: boolean
+    chamber_temperature?: number | null
     absolute_humidity?: number
     remaining?: number
     heater_power?: number
