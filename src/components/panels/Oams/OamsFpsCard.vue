@@ -57,6 +57,7 @@
                     :selected-group="selectedGroup"
                     :show-material-labels="showMaterialLabels"
                     @assign-bay="(bayIndex) => $emit('assign-bay', oamsIndex, bayIndex)"
+                    @device-action="(payload) => $emit('device-action', oamsIndex, payload)"
                     @save-pid="(payload) => $emit('save-pid', oamsIndex, payload)" />
                 <div v-if="oamsSlots === 1" class="oams-card oams-card--placeholder" aria-hidden="true" />
             </div>

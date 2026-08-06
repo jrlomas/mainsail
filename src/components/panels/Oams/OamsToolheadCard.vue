@@ -70,6 +70,7 @@
                 :selected-group="selectedGroup"
                 :show-material-labels="showMaterialLabels"
                 @assign-bay="(oamsIndex, bayIndex) => onAssignBay(fpsIndex, oamsIndex, bayIndex)"
+                @device-action="(oamsIndex, payload) => $emit('device-action', fpsIndex, oamsIndex, payload)"
                 @save-pid="(oamsIndex, payload) => $emit('save-pid', fpsIndex, oamsIndex, payload)" />
         </div>
     </section>

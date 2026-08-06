@@ -124,6 +124,17 @@
         color: var(--c-text-muted);
         padding: calc(8px * var(--ui-scale));
     }
+    .oams-preview-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        width: fit-content;
+    }
+
+    .oams-preview-controls .toolhead-group-action-btn {
+        width: auto;
+    }
 
     .toolhead-card {
         display: inline-block;
@@ -666,6 +677,16 @@
         background: rgba(153, 27, 27, 0.28);
         color: #ffb4b4;
     }
+    .oams-card--preview {
+        border-style: dashed;
+        border-color: rgba(245, 158, 11, 0.65);
+    }
+
+    .oams-chip--preview {
+        border: 1px solid rgba(245, 158, 11, 0.45);
+        background: rgba(245, 158, 11, 0.16);
+        color: #fcd34d;
+    }
 
     .oams-bays-container {
         display: flex;
@@ -873,11 +894,11 @@
     }
 
     .oams-settings-overlay {
-        position: absolute;
+        position: fixed;
         inset: 0;
-        z-index: 25;
+        z-index: 220;
         background: var(--c-overlay);
-        border-radius: 7px;
+        border-radius: 0;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -885,12 +906,14 @@
     }
 
     .oams-settings-dialog {
-        width: 100%;
+        width: min(560px, calc(100vw - 32px));
         border: 1px solid var(--c-border-strong);
         border-radius: 7px;
         background: var(--c-surface-3);
         box-shadow: 0 10px 24px var(--c-shadow-xl);
         padding: 8px;
+        max-height: calc(100vh - 32px);
+        overflow-y: auto;
     }
 
     .oams-settings-title {
@@ -975,6 +998,110 @@
         border: 1px solid var(--c-btn-primary-border);
         background: var(--c-btn-primary-bg);
         color: var(--c-btn-primary-text);
+    }
+    .oams-device-details {
+        display: grid;
+        gap: 10px;
+    }
+
+    .oams-device-warning-list {
+        display: grid;
+        gap: 6px;
+    }
+
+    .oams-device-warning-list .app-warning {
+        margin: 0;
+    }
+
+    .oams-device-section {
+        display: grid;
+        gap: 8px;
+        padding-top: 10px;
+        border-top: 1px solid var(--c-border);
+    }
+
+    .oams-device-section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .oams-device-section-header h5 {
+        margin: 0;
+        color: var(--c-text-primary);
+        font-size: 0.76rem;
+    }
+
+    .oams-device-metrics {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+        gap: 6px;
+    }
+
+    .oams-device-metric {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+        padding: 6px;
+        border: 1px solid var(--c-border);
+        border-radius: 5px;
+        background: var(--c-surface);
+    }
+
+    .oams-device-metric-label {
+        color: var(--c-text-secondary);
+        font-size: 0.62rem;
+    }
+
+    .oams-device-metric-value {
+        overflow: hidden;
+        color: var(--c-text-primary);
+        font-size: 0.73rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .oams-device-control-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        align-items: end;
+    }
+
+    .oams-device-note {
+        margin: 0;
+        color: var(--c-text-muted);
+        font-size: 0.68rem;
+    }
+
+    .oams-device-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        padding-top: 2px;
+    }
+
+    .oams-rfid-row {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        padding: 6px;
+        border: 1px solid var(--c-border);
+        border-radius: 5px;
+        font-size: 0.7rem;
+    }
+
+    .oams-rfid-row code {
+        overflow: hidden;
+        color: var(--c-text-secondary);
+        text-overflow: ellipsis;
+    }
+
+    .oams-settings-actions {
+        margin-top: 10px;
     }
 
     .oams-popup-row {

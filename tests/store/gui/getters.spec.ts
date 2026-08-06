@@ -84,3 +84,31 @@ describe('gui/getPanels', () => {
         ])
     })
 })
+
+describe('gui/getAllPossiblePanels', () => {
+    it('keeps the OpenAMS panel available without a connected manager', () => {
+        const state = getDefaultState()
+        const moduleGetters = {
+            'macros/getAllMacrogroups': [],
+            'webcams/getWebcams': [],
+        }
+        const rootState = {
+            server: { components: [] },
+            printer: { heaters: { available_sensors: [] } },
+        } as unknown as RootState
+        const rootGetterValues = {
+            'printer/getKinematics': 'cartesian',
+            'printer/getExtruders': [],
+        }
+        const getAllPossiblePanels = getters.getAllPossiblePanels as (
+            state: GuiState,
+            getters: typeof moduleGetters,
+            rootState: RootState,
+            rootGetters: typeof rootGetterValues
+        ) => string[]
+
+        const panels = getAllPossiblePanels(state, moduleGetters, rootState, rootGetterValues)
+        expect((rootState.printer as Record<string, unknown>).oams_manager).toBeUndefined()
+        expect(panels).toContain('oams')
+    })
+})

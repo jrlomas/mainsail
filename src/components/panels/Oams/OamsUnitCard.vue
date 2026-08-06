@@ -1,5 +1,5 @@
 <template>
-    <div class="oams-card" :class="{ 'oams-card--selected': hasSelectedGroup }">
+    <div class="oams-card" :class="{ 'oams-card--preview': oams.preview, 'oams-card--selected': hasSelectedGroup }">
         <div class="oams-card-header">
             <label class="entity-name-wrap">
                 <span class="entity-label">{{ $t('Panels.OamsPanel.Oams') }}</span>
@@ -8,12 +8,14 @@
             <div class="oams-chip-row">
                 <span class="oams-chip">#{{ oams.index }}</span>
                 <span class="oams-chip">{{ oams.type }}</span>
-                <span class="oams-chip oams-chip--state" :class="'oams-chip--' + oams.state">
-                    {{ oams.state === 'online' ? $t('Panels.OamsPanel.Online') : $t('Panels.OamsPanel.Offline') }}
+                <span
+                    class="oams-chip oams-chip--state"
+                    :class="'oams-chip--' + (oams.preview ? 'preview' : oams.state)">
+                    {{ connectionLabel }}
                 </span>
             </div>
             <button
-                v-if="oams.state === 'online'"
+                v-if="oams.state === 'online' || oams.preview"
                 type="button"
                 class="oams-settings-btn"
                 :title="$t('Panels.OamsPanel.OamsSettings')"
@@ -48,11 +50,8 @@
                 <span class="oams-env-label">{{ $t('Panels.OamsPanel.Temp') }}</span>
                 <span class="oams-env-value">{{ tempDisplay }}</span>
             </div>
-            <div
-                class="oams-env-pill oams-env-pill--humidity"
-                :class="humidityPillClass"
-                :title="$t('Panels.OamsPanel.Humidity')">
-                <span class="oams-env-label">{{ $t('Panels.OamsPanel.Humidity') }}</span>
+            <div class="oams-env-pill oams-env-pill--humidity" :class="humidityPillClass" :title="humidityLabel">
+                <span class="oams-env-label">{{ humidityLabel }}</span>
                 <span class="oams-env-value">{{ humidityDisplay }}</span>
             </div>
         </div>
@@ -61,7 +60,9 @@
             <div class="oams-settings-dialog" @click.stop>
                 <h4 class="oams-settings-title">{{ $t('Panels.OamsPanel.OamsSettingsHeader') }}</h4>
 
-                <div class="oams-settings-section">
+                <oams-device-details :oams="oams" @device-action="$emit('device-action', $event)" />
+
+                <div v-if="canConfigurePid" class="oams-settings-section">
                     <span class="oams-settings-section-title">{{ $t('Panels.OamsPanel.RewindLoop') }}</span>
                     <div class="oams-settings-grid">
                         <label v-for="k in pidKeys" :key="'rw-' + k" class="oams-settings-input-wrap">
@@ -75,7 +76,7 @@
                     </div>
                 </div>
 
-                <div class="oams-settings-section">
+                <div v-if="canConfigurePid" class="oams-settings-section">
                     <span class="oams-settings-section-title">{{ $t('Panels.OamsPanel.FollowerLoop') }}</span>
                     <div class="oams-settings-grid">
                         <label v-for="k in pidKeys" :key="'fl-' + k" class="oams-settings-input-wrap">
@@ -91,9 +92,9 @@
 
                 <div class="oams-settings-actions">
                     <button type="button" class="oams-settings-btn-secondary" @click="settingsOpen = false">
-                        {{ $t('Panels.OamsPanel.Cancel') }}
+                        {{ canConfigurePid ? $t('Panels.OamsPanel.Cancel') : $t('Panels.OamsPanel.Close') }}
                     </button>
-                    <button type="button" class="oams-settings-btn-primary" @click="savePid">
+                    <button v-if="canConfigurePid" type="button" class="oams-settings-btn-primary" @click="savePid">
                         {{ $t('Panels.OamsPanel.Save') }}
                     </button>
                 </div>
@@ -106,8 +107,9 @@
 import { Component, Mixins, Prop } from 'vue-property-decorator'
 import BaseMixin from '@/components/mixins/base'
 import { OamsBay, OamsPidLoop, OamsUnit } from '@/components/panels/Oams/types'
+import OamsDeviceDetails from '@/components/panels/Oams/OamsDeviceDetails.vue'
 
-@Component
+@Component({ components: { OamsDeviceDetails } })
 export default class OamsUnitCard extends Mixins(BaseMixin) {
     @Prop({ required: true, type: Object }) declare readonly oams: OamsUnit
     @Prop({ default: null, type: String }) declare readonly selectedGroup: string | null
@@ -122,12 +124,27 @@ export default class OamsUnitCard extends Mixins(BaseMixin) {
         return this.selectedGroup !== null && this.oams.bays.some((b) => b.filament_group === this.selectedGroup)
     }
 
+    get canConfigurePid(): boolean {
+        return !this.oams.preview && this.oams.supported_actions.includes('configure_pid')
+    }
+
+    get connectionLabel(): string {
+        if (this.oams.preview) return this.$t('Panels.OamsPanel.Preview').toString()
+        return this.$t(`Panels.OamsPanel.${this.oams.state === 'online' ? 'Online' : 'Offline'}`).toString()
+    }
+
     get tempDisplay(): string {
         return this.oams.temperature_c === null ? '—' : `${this.oams.temperature_c.toFixed(1)}°C`
     }
 
     get humidityDisplay(): string {
+        if (this.oams.humidity_gm3 !== null) return `${this.oams.humidity_gm3.toFixed(2)} g/m³`
         return this.oams.humidity_rh === null ? '—' : `${Math.round(this.oams.humidity_rh)}%`
+    }
+
+    get humidityLabel(): string {
+        const key = this.oams.humidity_gm3 === null ? 'Humidity' : 'AbsoluteHumidity'
+        return this.$t(`Panels.OamsPanel.${key}`).toString()
     }
 
     // Neutral base pill when no sensor; coloured by reading when present.
@@ -139,6 +156,7 @@ export default class OamsUnitCard extends Mixins(BaseMixin) {
     }
 
     get humidityPillClass(): string {
+        if (this.oams.humidity_gm3 !== null) return ''
         const h = this.oams.humidity_rh
         if (h === null) return ''
         const state = h >= 35 ? 'high' : h >= 20 ? 'watch' : 'ideal'
@@ -187,6 +205,7 @@ export default class OamsUnitCard extends Mixins(BaseMixin) {
     }
 
     onBayClick(index: number) {
+        if (this.oams.preview) return
         if (this.selectedGroup !== null) this.$emit('assign-bay', index)
     }
 

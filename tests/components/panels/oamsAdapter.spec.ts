@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildOamsModel, oamsExists } from '@/components/panels/Oams/oamsAdapter'
+import {
+    buildOamsModel,
+    commandForOamsDevice,
+    oamsExists,
+    withOamsFamilyPreviews,
+} from '@/components/panels/Oams/oamsAdapter'
 
 function unit(overrides: Record<string, unknown> = {}) {
     return {
@@ -102,5 +107,115 @@ describe('oamsAdapter', () => {
         expect(model.toolheads[0].fps[0].name).toBe('fps')
         expect(model.toolheads[0].fps[0].value).toBe(1)
         expect(model.toolheads[0].fps[0].oams[0].state).toBe('offline')
+    })
+
+    it('renders a single-bay AMS HT from the manager capability contract', () => {
+        const model = buildOamsModel({
+            oams_manager: {
+                devices: {
+                    ht: {
+                        bay_count: 1,
+                        capabilities: {
+                            bays: 1,
+                            display_name: 'AMS HT',
+                            dryer: true,
+                            family: 'ams_ht',
+                            heater_count: 1,
+                            vent_count: 2,
+                        },
+                        connected: true,
+                        family: 'ams_ht',
+                        f1s_hes_value: [1],
+                        hub_hes_value: [0],
+                        oams_idx: 3,
+                        supported_actions: ['dryer_start', 'dryer_stop', 'rfid_scan'],
+                        telemetry: {
+                            dryer: { chamber_c: 52.5, humidity_gm3: 8.25, state_name: 'hold' },
+                            rfid: { result_name: 'ok', uid: '01020304' },
+                        },
+                        thermal: { temperature_c: 72, time_to_trip_s: 900, valid: true },
+                    },
+                },
+                lanes: { fps: {} },
+                topology: {
+                    fps: ['fps'],
+                    groups: { T0: { bays: ['ht-0'], lane: 'fps' } },
+                    oams: { ht: { bays: 1, family: 'ams_ht', idx: 3, lane: 'fps' } },
+                },
+            },
+        })
+
+        const ht = model.toolheads[0].fps[0].oams[0]
+        expect(ht.bays).toHaveLength(1)
+        expect(ht.bays[0].state).toBe('inserted')
+        expect(ht.display_name).toBe('AMS HT')
+        expect(ht.capabilities.vent_count).toBe(2)
+        expect(ht.temperature_c).toBe(52.5)
+        expect(ht.humidity_gm3).toBe(8.25)
+        expect(ht.rfid[0].uid).toBe('01020304')
+    })
+
+    it('keeps AMS 2 Pro at four bays and exposes its two heater/fan modules', () => {
+        const model = buildOamsModel({
+            'oams ams2': unit({ bay_count: 4, family: 'ams2' }),
+            oams_manager: {
+                lanes: { fps: {} },
+                topology: {
+                    fps: ['fps'],
+                    groups: {},
+                    oams: {
+                        ams2: {
+                            bays: 4,
+                            capabilities: { dryer: true, fan_count: 2, heater_count: 2 },
+                            family: 'ams2',
+                            idx: 2,
+                            lane: 'fps',
+                        },
+                    },
+                },
+            },
+        })
+
+        const ams2 = model.toolheads[0].fps[0].oams[0]
+        expect(ams2.bays).toHaveLength(4)
+        expect(ams2.display_name).toBe('AMS 2 Pro')
+        expect(ams2.capabilities).toMatchObject({ dryer: true, fan_count: 2, heater_count: 2 })
+    })
+    it('adds read-only AMS1 and AMS2 previews without duplicating connected families', () => {
+        const model = buildOamsModel({
+            'oams ht': unit({ bay_count: 1, family: 'ams_ht', oams_idx: 3 }),
+            oams_manager: { current_group: null, lanes: {} },
+        })
+        const preview = withOamsFamilyPreviews(model)
+        const devices = preview.toolheads[0].fps[0].oams
+
+        expect(devices.map((device) => device.family)).toEqual(['ams_ht', 'ams1', 'ams2'])
+        expect(devices.filter((device) => device.preview)).toHaveLength(2)
+        expect(
+            devices.filter((device) => device.preview).every((device) => device.supported_actions.length === 0)
+        ).toBe(true)
+        expect(devices.find((device) => device.family === 'ams2')?.bays).toHaveLength(4)
+        expect(withOamsFamilyPreviews(preview)).toBe(preview)
+    })
+
+    it('never builds commands for previews or unsupported actions', () => {
+        const preview = withOamsFamilyPreviews({ toolheads: [] })
+        const ams2Preview = preview.toolheads[0].fps[0].oams.find((device) => device.family === 'ams2')
+        expect(ams2Preview).toBeDefined()
+        expect(commandForOamsDevice(ams2Preview!, { action: 'dryer_stop' })).toBeNull()
+
+        const model = buildOamsModel({
+            'oams ams2': unit({
+                capabilities: { dryer_target_max_c: 65, dryer_target_min_c: 35 },
+                family: 'ams2',
+                supported_actions: ['dryer_start', 'dryer_stop'],
+            }),
+            oams_manager: { current_group: null, lanes: {} },
+        })
+        const real = model.toolheads[0].fps[0].oams[0]
+        expect(commandForOamsDevice(real, { action: 'dryer_start', duration: 60, target: 70 })).toBe(
+            'OAMS_DRYER_START OAMS=7 TARGET=65 DURATION=60'
+        )
+        expect(commandForOamsDevice(real, { action: 'rfid_scan' })).toBeNull()
     })
 })

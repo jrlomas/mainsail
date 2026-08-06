@@ -98,10 +98,9 @@ export const getters: GetterTree<GuiState, RootState> = {
             allPanels = allPanels.filter((name) => name !== 'atlas')
         }
 
-        // remove oams panel, if no OpenAMS manager exists in Klipper
-        if (!rootState.printer?.oams_manager) {
-            allPanels = allPanels.filter((name) => name !== 'oams')
-        }
+        // Keep OpenAMS reachable without live hardware in this qualification
+        // build. Its family-preview mode is read-only, and lets AMS1/AMS2 UI
+        // work proceed before those units or an oams_manager are connected.
 
         const hasAmsHtQualifier = Object.keys(rootState.printer || {}).some(
             (name) => name === 'ams_ht_qualifier' || name.startsWith('ams_ht_qualifier ')

@@ -6,6 +6,21 @@
         :collapsible="true">
         <div class="oams-panel" :class="{ 'theme-light': !isDark }" :lang="lang">
             <div class="oams-panel-body">
+                <div class="oams-preview-controls">
+                    <button
+                        type="button"
+                        class="toolhead-group-action-btn"
+                        @click="showFamilyPreviews = !showFamilyPreviews">
+                        {{
+                            showFamilyPreviews
+                                ? $t('Panels.OamsPanel.HideFamilyPreviews')
+                                : $t('Panels.OamsPanel.ShowFamilyPreviews')
+                        }}
+                    </button>
+                    <span v-if="showFamilyPreviews" class="oams-device-note">
+                        {{ $t('Panels.OamsPanel.FamilyPreviewHint') }}
+                    </span>
+                </div>
                 <p v-if="hasGaps" class="app-warning">{{ $t('Panels.OamsPanel.WarningGaps') }}</p>
                 <p v-if="model.toolheads.length === 0" class="app-loading">{{ $t('Panels.OamsPanel.NoData') }}</p>
                 <oams-toolhead-card
@@ -21,6 +36,9 @@
                         (fpsIndex, oamsIndex, bayIndex, group) =>
                             assignBay(toolheadIndex, fpsIndex, oamsIndex, bayIndex, group)
                     "
+                    @device-action="
+                        (fpsIndex, oamsIndex, payload) => deviceAction(toolheadIndex, fpsIndex, oamsIndex, payload)
+                    "
                     @save-pid="
                         (fpsIndex, oamsIndex, payload) => savePid(toolheadIndex, fpsIndex, oamsIndex, payload)
                     " />
@@ -34,8 +52,8 @@ import { Component, Mixins } from 'vue-property-decorator'
 import BaseMixin from '@/components/mixins/base'
 import Panel from '@/components/ui/Panel.vue'
 import { mdiCircleMultiple } from '@mdi/js'
-import { buildOamsModel } from '@/components/panels/Oams/oamsAdapter'
-import { OamsPidLoop, OamsSystemModel } from '@/components/panels/Oams/types'
+import { buildOamsModel, commandForOamsDevice, withOamsFamilyPreviews } from '@/components/panels/Oams/oamsAdapter'
+import { OamsDeviceAction, OamsPidLoop, OamsSystemModel } from '@/components/panels/Oams/types'
 import OamsToolheadCard from '@/components/panels/Oams/OamsToolheadCard.vue'
 import '@/components/panels/Oams/oams-ui.scss'
 
@@ -44,6 +62,7 @@ export default class OamsPanel extends Mixins(BaseMixin) {
     mdiCircleMultiple = mdiCircleMultiple
     showMaterialLabels = true
 
+    showFamilyPreviews = false
     get isDark(): boolean {
         return this.$vuetify.theme.dark
     }
@@ -53,7 +72,8 @@ export default class OamsPanel extends Mixins(BaseMixin) {
     }
 
     get model(): OamsSystemModel {
-        return buildOamsModel(this.$store.state.printer)
+        const model = buildOamsModel(this.$store.state.printer)
+        return this.showFamilyPreviews ? withOamsFamilyPreviews(model) : model
     }
 
     get filamentGroups(): string[] {
@@ -73,6 +93,12 @@ export default class OamsPanel extends Mixins(BaseMixin) {
 
     sendGcode(gcode: string): void {
         this.$store.dispatch('printer/sendGcode', gcode)
+    }
+    deviceAction(toolheadIndex: number, fpsIndex: number, oamsIndex: number, payload: OamsDeviceAction): void {
+        const unit = this.model.toolheads[toolheadIndex]?.fps[fpsIndex]?.oams[oamsIndex]
+        if (!unit) return
+        const command = commandForOamsDevice(unit, payload)
+        if (command) this.sendGcode(command)
     }
 
     addGroup(): void {
@@ -99,7 +125,7 @@ export default class OamsPanel extends Mixins(BaseMixin) {
 
     assignBay(toolheadIndex: number, fpsIndex: number, oamsIndex: number, bayIndex: number, group: string): void {
         const unit = this.model.toolheads[toolheadIndex]?.fps[fpsIndex]?.oams[oamsIndex]
-        if (!unit) return
+        if (!unit || unit.preview) return
         const bay = unit.bays[bayIndex]
         // Toggle: clicking a bay already in the selected group removes it.
         const command = bay?.filament_group === group ? 'OAMSM_UNASSIGN_BAY' : 'OAMSM_ASSIGN_BAY'
@@ -113,7 +139,7 @@ export default class OamsPanel extends Mixins(BaseMixin) {
         payload: { rewind: OamsPidLoop; follower: OamsPidLoop }
     ): void {
         const unit = this.model.toolheads[toolheadIndex]?.fps[fpsIndex]?.oams[oamsIndex]
-        if (!unit) return
+        if (!unit || unit.preview) return
         const { rewind, follower } = payload
         // follower_loop = hub-motor (pressure) PID; rewind_loop = rewind-current PID.
         this.sendGcode(`OAMS_PID_SET OAMS=${unit.index} P=${follower.p} I=${follower.i} D=${follower.d}`)
