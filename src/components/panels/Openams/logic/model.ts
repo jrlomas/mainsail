@@ -929,6 +929,15 @@ export function applyComponentStatus(m: Model, obj: unknown): boolean {
                     )
                 }
             }
+        } else {
+            // No spool linked here any more: the bay's own numbers go with it, so
+            // the tile reads like one that never held a spool instead of keeping the
+            // removed spool's color and percentage.
+            s.color = 0
+            s.material = ''
+            s.brand = ''
+            s.remainingPct = -1
+            s.remainingG = -1
         }
     }
     refreshThis(m)

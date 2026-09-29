@@ -6,7 +6,7 @@
         :collapsible="true"
         card-class="openams-control-panel">
         <v-card-text class="pt-1">
-            <openams-panel-view :logic="adapter.logic" />
+            <openams-view :logic="adapter.logic" theme="host" @request="onRequest" />
         </v-card-text>
     </panel>
 </template>
@@ -15,10 +15,12 @@ import { Component, Mixins } from 'vue-property-decorator'
 import { mdiViewGrid } from '@mdi/js'
 import BaseMixin from '@/components/mixins/base'
 import { EventBus } from '@/plugins/eventBus'
-import { OpenamsAdapter, OPENAMS_SPOOLMAN_STATUS } from '@/components/panels/Openams/adapter'
-import type { OpenamsStoreState } from '@/components/panels/Openams/adapter'
+import { OpenamsAdapter, OPENAMS_SPOOLMAN_STATUS } from './Openams/adapter'
+import type { OpenamsStoreState } from './Openams/adapter'
+import OpenamsView from './Openams/components/OpenamsPanel.vue'
+import type { ActionResult } from './Openams/logic'
 
-@Component
+@Component({ components: { OpenamsView } })
 export default class OpenamsPanel extends Mixins(BaseMixin) {
     mdiViewGrid = mdiViewGrid
 
@@ -69,6 +71,28 @@ export default class OpenamsPanel extends Mixins(BaseMixin) {
         }
 
         return objects
+    }
+
+    /** What the user chose in the panel, sent the way Mainsail sends its own:
+     *  G-code through the gcode script call (so it shows in the console), an RPC
+     *  by its method, a refusal as Mainsail's transient error. A `local` result
+     *  is display-only and goes nowhere. */
+    onRequest(result: ActionResult) {
+        const socket = this.$socket as unknown as { emit: (method: string, params?: unknown) => void }
+
+        switch (result.kind) {
+            case 'gcode':
+                socket.emit('printer.gcode.script', { script: result.script })
+                break
+            case 'rpc':
+                socket.emit(result.method, result.params)
+                break
+            case 'error':
+                this.$toast.error(result.reason)
+                break
+            default:
+                break
+        }
     }
 
     feed() {

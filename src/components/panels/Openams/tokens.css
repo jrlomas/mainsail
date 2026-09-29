@@ -1,0 +1,89 @@
+.oams-panel {
+    --oams-radius-card: 22px;
+    --oams-radius-section: 16px;
+    --oams-radius-tile: 14px;
+    --oams-radius-tile-compact: 12px;
+    --oams-radius-pill: 999px;
+    --oams-radius-chip: 6px;
+    --oams-gap-card-gap: 10px;
+    --oams-hatch-angle: -45deg;
+    --oams-hatch-period: 8px;
+    --oams-hatch-stripe: 2px;
+    --oams-fs-title: 21px;
+    --oams-fw-title: 600;
+    --oams-fs-section: 15px;
+    --oams-fw-section: 600;
+    --oams-fs-tile-label: 20px;
+    --oams-fw-tile-label: 600;
+    --oams-fs-body: 14px;
+    --oams-fw-body: 500;
+    --oams-fs-meta: 12px;
+    --oams-fw-meta: 400;
+    --oams-fs-value-mono: 22px;
+    --oams-fw-value-mono: 400;
+    --oams-ink-threshold: 160;
+    --oams-bg: transparent;
+    --oams-surface-1: transparent;
+    --oams-surface-2: color-mix(in srgb, currentColor 5%, transparent);
+    --oams-surface-3: color-mix(in srgb, currentColor 8%, transparent);
+    --oams-line: color-mix(in srgb, currentColor 10%, transparent);
+    --oams-text-muted: color-mix(in srgb, currentColor 65%, transparent);
+    --oams-text-faint: color-mix(in srgb, currentColor 48%, transparent);
+    --oams-pill-bg: color-mix(in srgb, currentColor 6%, transparent);
+    --oams-pill-text: currentColor;
+    --oams-heat-bg: rgba(255, 122, 61, 0.16);
+    --oams-heat-text: color-mix(in srgb, #e0561a 72%, currentColor);
+    --oams-accent: #2f7de1;
+    --oams-warn: #c98a06;
+    --oams-error: #d6334a;
+    --oams-ok: #1f9e67;
+    --oams-info: #2f7de1;
+    --oams-hatch-alpha: 14%;
+    --oams-font-mono: ui-monospace, 'Roboto Mono', monospace;
+}
+
+.oams-panel[data-theme='dark'] {
+    --oams-bg: #14161a;
+    --oams-surface-1: #22262c;
+    --oams-surface-2: #15191e;
+    --oams-surface-3: #171b21;
+    --oams-line: rgba(255, 255, 255, 0.08);
+    --oams-text: #f3f5f7;
+    --oams-text-muted: #9aa3ad;
+    --oams-text-faint: #6b7380;
+    --oams-accent: #8ec4ff;
+    --oams-heat-bg: rgba(255, 122, 61, 0.14);
+    --oams-heat-text: #ffb087;
+    --oams-pill-bg: rgba(255, 255, 255, 0.05);
+    --oams-pill-text: #d7dde4;
+    --oams-warn: #f5a524;
+    --oams-error: #f2555a;
+    --oams-ok: #3ddc97;
+    --oams-info: #5aa9ff;
+    --oams-hatch-alpha: 16%;
+    --oams-font-ui: 'Geist', ui-sans-serif, system-ui, sans-serif;
+    --oams-font-mono: 'IBM Plex Mono', ui-monospace, 'Roboto Mono', monospace;
+}
+
+.oams-panel[data-theme='light'] {
+    --oams-bg: #f4f5f7;
+    --oams-surface-1: #ffffff;
+    --oams-surface-2: #eef0f3;
+    --oams-surface-3: #e3e6ea;
+    --oams-line: rgba(0, 0, 0, 0.1);
+    --oams-text: #15171b;
+    --oams-text-muted: #4b535c;
+    --oams-text-faint: #7a828c;
+    --oams-accent: #2f7de1;
+    --oams-heat-bg: #ffe8dc;
+    --oams-heat-text: #b8541f;
+    --oams-pill-bg: rgba(0, 0, 0, 0.05);
+    --oams-pill-text: #2a3038;
+    --oams-warn: #c98a06;
+    --oams-error: #d6334a;
+    --oams-ok: #1f9e67;
+    --oams-info: #2f7de1;
+    --oams-hatch-alpha: 13%;
+    --oams-font-ui: 'Geist', ui-sans-serif, system-ui, sans-serif;
+    --oams-font-mono: 'IBM Plex Mono', ui-monospace, 'Roboto Mono', monospace;
+}

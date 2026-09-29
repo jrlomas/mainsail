@@ -1,0 +1,57 @@
+// The shared token values and the mixins the components' scoped SCSS uses.
+// The themes themselves are CSS custom properties (tokens.css), so a host's
+// colors and fonts cascade in from outside.
+
+$oams-radius-card: 22px;
+$oams-radius-section: 16px;
+$oams-radius-tile: 14px;
+$oams-radius-tile-compact: 12px;
+$oams-radius-pill: 999px;
+$oams-radius-chip: 6px;
+
+$oams-gap-card-gap: 10px;
+
+$oams-fs-title: 21px;
+$oams-fw-title: 600;
+$oams-fs-section: 15px;
+$oams-fw-section: 600;
+$oams-fs-tile-label: 20px;
+$oams-fw-tile-label: 600;
+$oams-fs-body: 14px;
+$oams-fw-body: 500;
+$oams-fs-meta: 12px;
+$oams-fw-meta: 400;
+$oams-fs-value-mono: 22px;
+$oams-fw-value-mono: 400;
+
+$oams-hatch-angle: -45deg;
+$oams-hatch-period: 8px;
+$oams-hatch-stripe: 2px;
+
+/** The mono stack: the host's, or the standalone page's. */
+@mixin oams-mono {
+    font-family: var(--oams-font-mono);
+}
+
+/** A visible focus ring on every interactive element (principle 12). */
+@mixin oams-focus {
+    &:focus-visible {
+        outline: 2px solid var(--oams-accent);
+        outline-offset: 2px;
+    }
+}
+
+/** The one disabled look: diagonal stripes of the text color over the
+ *  surface, so "no spool" is never a black tile (docs/design/UNIFIED_UI.md 4c). */
+@mixin oams-hatch {
+    $stripe: color-mix(in srgb, var(--oams-text, currentColor) var(--oams-hatch-alpha), transparent);
+    background:
+        repeating-linear-gradient(
+            $oams-hatch-angle,
+            transparent 0,
+            transparent calc(#{$oams-hatch-period} - #{$oams-hatch-stripe}),
+            $stripe calc(#{$oams-hatch-period} - #{$oams-hatch-stripe}),
+            $stripe $oams-hatch-period
+        ),
+        var(--oams-surface-3);
+}

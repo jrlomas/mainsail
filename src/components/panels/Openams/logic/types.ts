@@ -7,7 +7,8 @@
 export type Severity = 'stop' | 'pause' | 'info'
 export type Ink = 'light' | 'dark'
 export type ActionStyle = 'primary' | 'normal' | 'danger'
-export type TileState = 'loaded' | 'ready' | 'empty' | 'positioning' | 'loading' | 'error' | 'runout' | 'unknown'
+export type TileState =
+    'loaded' | 'ready' | 'empty' | 'positioning' | 'loading' | 'unloading' | 'error' | 'runout' | 'unknown'
 
 /** The tone of a toolhead's message and of a tile's tag: red, yellow, plain gray. */
 export type Tone = 'error' | 'info' | 'neutral'

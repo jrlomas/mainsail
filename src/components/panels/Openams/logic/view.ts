@@ -92,8 +92,6 @@ const ACTION_REASON = 40
 const CONFIRM_TITLE = 32
 const CONFIRM_TEXT = 72
 const CONFIRM_OK = 16
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const FIELD_ID = 12
 const FIELD_LABEL = 16
 const FIELD_UNIT = 4
 const OPTION_LABEL = 44
@@ -250,7 +248,8 @@ function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
     const spare = gi >= 0 ? computeSpare(m, gi, unitIdx, bay) : null
 
     // State, in the order a fault or a motion in progress outranks a plain
-    // material reading: error > runout > loading > positioning > the raw slot state.
+    // material reading: error > runout > loading/unloading > positioning > the
+    // raw slot state.
     let state: ViewTile['state']
     let tag: Tag | null = null
     const mkTag = (text: string, tone: Tone): Tag => ({ text: cut(text, TAG), tone, detail: '', code: '' })
@@ -261,8 +260,9 @@ function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
         state = 'runout'
         tag = mkTag(str('TAG_RUNOUT'), 'info')
     } else if (th && th.busy !== Busy.NONE && th.busyUnit === unitIdx && th.busySlot === bay) {
-        state = 'loading'
-        tag = mkTag(str('TAG_LOADING'), 'info')
+        const unloading = th.busy === Busy.UNLOAD
+        state = unloading ? 'unloading' : 'loading'
+        tag = mkTag(str(unloading ? 'TAG_UNLOADING' : 'TAG_LOADING'), 'info')
     } else if (s.positioning) {
         state = 'positioning'
         tag = mkTag(str('TAG_POSITIONING'), 'info')
@@ -288,6 +288,7 @@ function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
                 error: 'TAGD_ERROR',
                 runout: 'TAGD_RUNOUT',
                 loading: 'TAGD_LOADING',
+                unloading: 'TAGD_UNLOADING',
                 positioning: 'TAGD_POSITIONING',
                 empty: 'TAGD_NOT_INSERTED',
             }[state as string] ?? 'TAGD_CONFIRM'
