@@ -27,6 +27,7 @@ import {
     refreshThis,
 } from './model'
 import type { Model } from './model'
+import { setLanguage } from './strings'
 import { buildView } from './view'
 import type { ActionResult, Core, ObjectKind, View } from './types'
 
@@ -151,6 +152,14 @@ export class OpenamsLogic implements Core {
     /** Resolve an action line (a form fills its `{field}` placeholders). */
     action(line: string, form?: Record<string, string | number | boolean> | null): ActionResult {
         return coreAction(this.model, String(line), form ?? null)
+    }
+
+    /** Show the view's text in `code` ("en", "qps"). False when no such
+     *  language is built in; the current one is kept. The language is shared
+     *  module state (the wasm core has one model per module too), so a caller
+     *  that wants two languages at once needs two pages. */
+    setLanguage(code: string): boolean {
+        return setLanguage(code)
     }
 
     /** Call `listener` with the current view after any apply() or reset(), at

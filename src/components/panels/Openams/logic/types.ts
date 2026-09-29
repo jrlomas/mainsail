@@ -167,13 +167,26 @@ export interface ViewAlertGroup {
     items: ViewAlert[]
 }
 
+export interface ViewSettingOption {
+    /** The language's code ("en", "qps"), what `setLanguage()` takes. */
+    code: string
+    /** That language's own name, never translated. */
+    label: string
+}
+
 export interface ViewSetting {
     key: string
     label: string
     note: string
+    /** The on/off state of a switch row; false on a choice row. */
     value: boolean
-    action_on: ViewAction
-    action_off: ViewAction
+    /** The two actions of a switch row; null on a choice row. */
+    action_on: ViewAction | null
+    action_off: ViewAction | null
+    /** A choice row's list (the languages), empty on a switch row. */
+    options: ViewSettingOption[]
+    /** The index into `options` of the current choice; 0 on a switch row. */
+    selected: number
 }
 
 /** The panel's own chrome strings. */
@@ -239,6 +252,14 @@ export interface Core {
     view(): View
     /** Resolve an action line (filling `{field}` placeholders from @p form). */
     action(line: string, form?: Record<string, string | number | boolean> | null): ActionResult
+    /**
+     * Show the view's text in @p code ("en", "qps"): every later view() uses
+     * it, and an id the language does not translate falls back to English.
+     * Returns false when no such language is built in (the current one is
+     * kept). The choice survives reset(). Read view() again afterwards: the
+     * view is rebuilt, never patched.
+     */
+    setLanguage(code: string): boolean
     /**
      * Call @p listener with the current view after any apply() or reset(), at
      * most once per animation frame (a microtask in node). Every listener of a

@@ -1,27 +1,56 @@
 // The composed strings (numbers and names inside a sentence): the port of the
 // vs_fmt_* functions in src/view/strings.c. The fixed strings live in
-// design/strings.json and reach here as strings.gen.ts; every user-visible
-// word is composed in these two places only (PRINCIPLES.md 5).
+// design/strings/<lang>.json and reach here as strings.gen.ts; every
+// user-visible word is composed in these two places only (PRINCIPLES.md 5).
+//
+// The tables are per language, English is the master and the fallback, and
+// setLanguage() picks one - the same rules as the C core's view_set_language(),
+// which the differential tests hold identical.
 //
 // Each function returns the whole text. The caller cuts it to the field it
-// lands in, as the C's snprintf into a fixed buffer does.
+// lands in, as the C's writer into a fixed buffer does.
 
-import { STR } from './strings.gen'
+import { LANG_CODES, LANG_NAMES, SETTING_KEYS, STR_en, TABLES } from './strings.gen'
 import type { StrId } from './strings.gen'
 import { fmtFixed } from './cstr'
 
-export { STR, SETTING_KEYS } from './strings.gen'
+export { STR_en, LANG_CODES, LANG_NAMES, SETTING_KEYS } from './strings.gen'
 export type { StrId }
 
-/** The fixed text for `id` (view_str(VS_<id>)). */
-export const str = (id: StrId): string => STR[id]
+/* ------------------------------------------------------------- language */
+
+/** The language every string is looked up in. Module state, not model state:
+ *  the wasm module holds one core, and a fresh TypeScript core shares it too,
+ *  so the two cores can only be compared one language at a time (the
+ *  differential harness switches both together). */
+let current = LANG_CODES[0] as string
+
+/** The fixed text for `id` in the current language (view_str(VS_<id>)); an id
+ *  the current language does not translate falls back to English's. */
+export const str = (id: StrId): string => TABLES[current]?.[id] ?? STR_en[id]
 
 /** The action mapper's terse reasons are user sentences in the table; this
  *  is the same lookup under the C's name. */
 export const viewStr = str
 
+/** Every language built in, by code and by its own name (the names are never
+ *  translated: the list shows each language in its own script). */
+export const languages = (): { code: string; label: string }[] =>
+    LANG_CODES.map((code, i) => ({ code, label: LANG_NAMES[i] }))
+
+/** The code of the language in use. */
+export const language = (): string => current
+
+/** Show the view's text in `code`. False (and the current language kept) when
+ *  no such language is built in. Nothing is cached: build the view again. */
+export function setLanguage(code: string): boolean {
+    if (!LANG_CODES.includes(code as (typeof LANG_CODES)[number])) return false
+    current = code
+    return true
+}
+
 /** "?" when unknown (negative), else "NN%". */
-export const fmtPct = (pct: number): string => (pct < 0 ? STR.UNKNOWN_MARK : `${pct}%`)
+export const fmtPct = (pct: number): string => (pct < 0 ? str('UNKNOWN_MARK') : `${pct}%`)
 
 /** "" when unknown, else "NN g". */
 export const fmtGrams = (grams: number): string => (grams < 0 ? '' : `${grams} g`)

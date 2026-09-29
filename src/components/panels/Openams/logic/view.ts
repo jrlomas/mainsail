@@ -39,6 +39,9 @@ import {
     fmtSpoolOption,
     fmtToolSpool,
     fmtUnitSpool,
+    LANG_CODES,
+    language,
+    languages,
     SETTING_KEYS,
     str,
 } from './strings'
@@ -57,10 +60,13 @@ import type {
     ViewUnit,
 } from './types'
 
-// The C's text field sizes (src/view/view.h), so text is cut where the C cuts it.
+// The C's text field sizes (src/view/view.h), so text is cut where the C cuts
+// it. Only the fields that hold *composed* text have a size left: a fixed
+// string is a pointer into a const table in C, so the TypeScript builders
+// hand the table's text over whole and never cut it. The differential tests
+// hold the two identical.
 const ID = 16
 const LABEL = 16
-const TAG = 16
 const MATERIAL = 24
 const GRAMS = 12
 const PCT = 8
@@ -71,29 +77,18 @@ const STEP_LABEL = 32
 const PRESSURE_TEXT = 12
 const SCALE = 8
 const UNIT_ID = 8
-const UNIT_STATUS = 16
 const ENV_TEXT = 24
 const DRYER_TEXT = 32
 const FAMILY = 16
 const ALERT_CODE = 40
-const ALERT_TITLE = 16
 const ALERT_TEXT = 96
 const ALERT_UNIT = 8
 const TAG_DETAIL = 96
 const SETTING_KEY = 32
-const SETTING_LABEL = 40
-const SETTING_NOTE = 64
-const PANEL_NOTICE = 40
-const LABEL_TEXT = 32
 const ACTION_ID = 20
-const ACTION_LABEL = 20
 const ACTION_LINE = 56
-const ACTION_REASON = 40
-const CONFIRM_TITLE = 32
-const CONFIRM_TEXT = 72
-const CONFIRM_OK = 16
-const FIELD_LABEL = 16
-const FIELD_UNIT = 4
+const ACTION_REASON = 56
+const FIELD_ID = 12
 const OPTION_LABEL = 44
 
 const MAX_ACTIONS = 8
@@ -103,6 +98,8 @@ const MAX_OPTIONS = 16
 const MAX_ALERTS = 8
 const MAX_PENDING_SPOOLS = 8
 const MAX_UNASSIGNED = 6
+const MAX_SETTINGS = 6
+const LANGUAGE_SETTING_ROW = MAX_SETTINGS - 1
 
 // -------------------------------------------------------------- geometry
 
@@ -189,7 +186,7 @@ class ActionList {
         if (this.items.length >= MAX_ACTIONS) return null
         const a: ViewAction = {
             id: cut(id, ACTION_ID),
-            label: cut(label, ACTION_LABEL),
+            label,
             line: cut(line, ACTION_LINE),
             enabled: false,
             reason: '',
@@ -227,7 +224,7 @@ function simple(
 }
 
 function confirm(a: ViewAction, title: string, text: string, ok: string): void {
-    a.confirm = { title: cut(title, CONFIRM_TITLE), text: cut(text, CONFIRM_TEXT), ok_label: cut(ok, CONFIRM_OK) }
+    a.confirm = { title, text, ok_label: ok }
 }
 
 // -------------------------------------------------------------------- tile
@@ -252,7 +249,7 @@ function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
     // raw slot state.
     let state: ViewTile['state']
     let tag: Tag | null = null
-    const mkTag = (text: string, tone: Tone): Tag => ({ text: cut(text, TAG), tone, detail: '', code: '' })
+    const mkTag = (text: string, tone: Tone): Tag => ({ text, tone, detail: '', code: '' })
     if (s.state === SlotState.ERROR) {
         state = 'error'
         tag = mkTag(str('TAG_ERROR'), 'error')
@@ -379,7 +376,7 @@ function tileActions(m: Model, unitIdx: number, bay: number): ViewAction[] {
                 fields: [
                     {
                         id: 'spool',
-                        label: cut(str('FIELD_SPOOL_LABEL'), FIELD_LABEL),
+                        label: str('FIELD_SPOOL_LABEL'),
                         kind: 'select',
                         value: cjsonNumber(value),
                         min: 0,
@@ -447,23 +444,23 @@ function unitActions(m: Model, unitIdx: number): ViewAction[] {
             fields: [
                 {
                     id: 'target',
-                    label: cut(str('FIELD_TARGET_LABEL'), FIELD_LABEL),
+                    label: str('FIELD_TARGET_LABEL'),
                     kind: 'number',
                     value: target,
                     min: 45,
                     max: tmax,
                     step: 5,
-                    unit: cut(str('FIELD_TARGET_UNIT'), FIELD_UNIT),
+                    unit: str('FIELD_TARGET_UNIT'),
                 },
                 {
                     id: 'hours',
-                    label: cut(str('FIELD_HOURS_LABEL'), FIELD_LABEL),
+                    label: str('FIELD_HOURS_LABEL'),
                     kind: 'number',
                     value: hours,
                     min: 1,
                     max: 24,
                     step: 1,
-                    unit: cut(str('FIELD_HOURS_UNIT'), FIELD_UNIT),
+                    unit: str('FIELD_HOURS_UNIT'),
                 },
             ],
         }
@@ -517,7 +514,7 @@ function buildUnit(m: Model, unitIdx: number): ViewUnit {
         title: cut(variantName(u.variant), TITLE),
         subtitle: cut(u.name, UNIT_ID),
         online: u.connected,
-        status_text: u.connected ? '' : cut(str('UNIT_OFFLINE'), UNIT_STATUS),
+        status_text: u.connected ? '' : str('UNIT_OFFLINE'),
         env,
         dryer,
         alert: scanAlerts(m, unitIdx, -1),
@@ -604,7 +601,7 @@ function faultItem(m: Model, th: Toolhead): ViewAlert {
     return {
         severity: SEVERITY[th.errorSeverity],
         code: cut(th.errorCode, ALERT_CODE),
-        title: cut(alertTitle(th.errorSeverity), ALERT_TITLE),
+        title: alertTitle(th.errorSeverity),
         text: cut(th.errorText || th.errorCode, ALERT_TEXT),
         unit,
         slot_id: slot,
@@ -619,7 +616,7 @@ function historyItem(m: Model, a: Alert): ViewAlert {
     return {
         severity: SEVERITY[a.severity],
         code: '',
-        title: cut(alertTitle(a.severity), ALERT_TITLE),
+        title: alertTitle(a.severity),
         text: cut(a.text, ALERT_TEXT),
         unit: a.unit >= 0 && a.unit < m.units.length ? cut(m.units[a.unit].name, ALERT_UNIT) : null,
         slot_id: null,
@@ -669,7 +666,7 @@ function scanAlerts(m: Model, unitIdx: number, thIdx: number): ViewAlertGroup | 
         add(1, Sev.PAUSE, () => ({
             severity: 'pause',
             code: '',
-            title: cut(alertTitle(Sev.PAUSE), ALERT_TITLE),
+            title: alertTitle(Sev.PAUSE),
             text: cut(str('ALERT_DRYER'), ALERT_TEXT),
             unit: cut(u.name, ALERT_UNIT),
             slot_id: null,
@@ -682,7 +679,7 @@ function scanAlerts(m: Model, unitIdx: number, thIdx: number): ViewAlertGroup | 
         add(1, Sev.INFO, () => ({
             severity: 'info',
             code: '',
-            title: cut(alertTitle(Sev.INFO), ALERT_TITLE),
+            title: alertTitle(Sev.INFO),
             text: cut(str('ALERT_ADAPTER'), ALERT_TEXT),
             unit: cut(u.name, ALERT_UNIT),
             slot_id: null,
@@ -756,6 +753,21 @@ function buildMessage(m: Model, th: Toolhead): ViewToolhead['message'] {
         const short = tool >= 0 ? toolShortfall(m, tool) : null
         if (short) return { text: cut(fmtShortfall(tool, short.need, short.have), MESSAGE), tone: 'info' }
     }
+    // A tile in error that no lane fault covers: the tag says where, this row says
+    // what (PRINCIPLES.md 10). A load or unload in progress keeps its step message.
+    if (th.busy === Busy.NONE) {
+        const thIdx = m.toolheads.indexOf(th)
+        for (const un of m.units) {
+            if (un.toolhead !== thIdx || !un.connected) continue
+            for (let si = 0; si < un.slots.length; si++) {
+                if (un.slots[si].state !== SlotState.ERROR) continue
+                return {
+                    text: cut(`${fmtUnitSpool(un.name, si)} ${str('STATUS_SPOOL_ERROR')}`, MESSAGE),
+                    tone: 'error',
+                }
+            }
+        }
+    }
     const status =
         th.busy === Busy.LOAD
             ? 'STATUS_LOADING'
@@ -811,7 +823,7 @@ function buildToolhead(m: Model, index: number): ViewToolhead {
             ? {
                   value: cjsonNumber(th.pressure),
                   set_point: cjsonNumber(th.setPoint),
-                  label: cut(str('LABEL_PRESSURE'), 24),
+                  label: str('LABEL_PRESSURE'),
                   text: cut(fmtPressure(th.pressure), PRESSURE_TEXT),
                   scale: [cut(fmtScale(0), SCALE), cut(fmtScale(th.setPoint), SCALE), cut(fmtScale(1), SCALE)],
               }
@@ -849,10 +861,27 @@ function buildSetting(m: Model, i: number): ViewSetting {
         m.settings.applyPaOnLoad,
     ]
     const key = SETTING_KEYS[i]
-    const toggle = (id: string, label: string, line: string): ViewAction => {
+    const label = str(`SETTING_${i}_TITLE` as 'SETTING_0_TITLE')
+    const note = str(`SETTING_${i}_NOTE` as 'SETTING_0_NOTE')
+    // The last row is the language, not an on/off switch: a list of the languages
+    // built in, each by its own name, with the current one selected. It sends
+    // no action; the host calls setLanguage() with the code it picked.
+    if (i === LANGUAGE_SETTING_ROW) {
+        return {
+            key: cut(key, SETTING_KEY),
+            label,
+            note,
+            value: false,
+            action_on: null,
+            action_off: null,
+            options: languages().map((l) => ({ code: l.code, label: l.label })),
+            selected: LANG_CODES.indexOf(language() as (typeof LANG_CODES)[number]),
+        }
+    }
+    const toggle = (id: string, text: string, line: string): ViewAction => {
         const a: ViewAction = {
             id,
-            label: cut(label, ACTION_LABEL),
+            label: text,
             line: cut(line, ACTION_LINE),
             enabled: false,
             reason: '',
@@ -866,11 +895,13 @@ function buildSetting(m: Model, i: number): ViewSetting {
     }
     return {
         key: cut(key, SETTING_KEY),
-        label: cut(str(`SETTING_${i}_TITLE` as 'SETTING_0_TITLE'), SETTING_LABEL),
-        note: cut(str(`SETTING_${i}_NOTE` as 'SETTING_0_NOTE'), SETTING_NOTE),
+        label,
+        note,
         value: values[i],
         action_on: toggle('setting_on', str('ACTION_ON'), `setting ${key} on`),
         action_off: toggle('setting_off', str('ACTION_OFF'), `setting ${key} off`),
+        options: [],
+        selected: 0,
     }
 }
 
@@ -886,9 +917,9 @@ export function buildView(m: Model): View {
     }
 
     let notice: View['notice'] = null
-    if (m.units.length === 0) notice = { text: cut(str('PANEL_NO_UNITS'), PANEL_NOTICE) }
-    else if (!m.units.some((u) => u.connected)) notice = { text: cut(str('PANEL_HOST_OFFLINE'), PANEL_NOTICE) }
-    else if (!m.settings.known) notice = { text: cut(str('PANEL_NOT_READY'), PANEL_NOTICE) }
+    if (m.units.length === 0) notice = { text: str('PANEL_NO_UNITS') }
+    else if (!m.units.some((u) => u.connected)) notice = { text: str('PANEL_HOST_OFFLINE') }
+    else if (!m.settings.known) notice = { text: str('PANEL_NOT_READY') }
 
     const pending: string[] = []
     for (let i = 0; i < m.units.length && pending.length < MAX_PENDING_SPOOLS; i++) {
@@ -910,14 +941,14 @@ export function buildView(m: Model): View {
         unread_count: panelAlerts.filter((a) => a.unread).length,
         notice,
         labels: {
-            alerts: cut(str('LABEL_ALERTS'), LABEL_TEXT),
-            settings: cut(str('LABEL_SETTINGS'), LABEL_TEXT),
-            fault: cut(str('LABEL_FAULT'), LABEL_TEXT),
-            pressure: cut(str('LABEL_PRESSURE'), LABEL_TEXT),
-            no_alerts: cut(str('LABEL_NO_ALERTS'), LABEL_TEXT),
-            close: cut(str('LABEL_CLOSE'), LABEL_TEXT),
-            cancel: cut(str('LABEL_CANCEL'), LABEL_TEXT),
-            no_response: cut(str('LABEL_NO_RESPONSE'), LABEL_TEXT),
+            alerts: str('LABEL_ALERTS'),
+            settings: str('LABEL_SETTINGS'),
+            fault: str('LABEL_FAULT'),
+            pressure: str('LABEL_PRESSURE'),
+            no_alerts: str('LABEL_NO_ALERTS'),
+            close: str('LABEL_CLOSE'),
+            cancel: str('LABEL_CANCEL'),
+            no_response: str('LABEL_NO_RESPONSE'),
         },
         spoolman: { online: m.spoolmanOnline, pending },
         settings: SETTING_KEYS.map((_, i) => buildSetting(m, i)),

@@ -5,18 +5,37 @@
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
+/** The bytes of the UTF-8 character that starts with `b` (1 for ASCII), 0 for
+ *  a byte that cannot start one: the C writer's own rule. */
+const utf8Len = (b: number): number => {
+    if (b < 0x80) return 1
+    if ((b & 0xe0) === 0xc0) return 2
+    if ((b & 0xf0) === 0xe0) return 3
+    if ((b & 0xf8) === 0xf0) return 4
+    return 0
+}
+
 /**
- * What `snprintf(buf, size, "%s", s)` leaves in a `char buf[size]`: at most
- * size - 1 bytes of UTF-8, cut wherever the byte limit falls. A cut inside a
- * multi-byte character decodes to U+FFFD, exactly as the wasm module's own
- * string reader shows it.
+ * What the C core's buffer writer (`vs_write` in src/view/strings.c) leaves in
+ * a `char buf[size]`: at most size - 1 bytes, cut at a character boundary. A
+ * character that would not fit whole is dropped rather than split, so the
+ * result is always valid UTF-8 - a CJK glyph is three bytes, so a byte-wise
+ * cut would lose half of one.
  */
 export function cut(s: string, size: number): string {
+    if (size <= 0) return ''
     // Each UTF-16 unit is at most 3 UTF-8 bytes, so a short string always fits.
     if (s.length * 3 < size) return s
     const bytes = encoder.encode(s)
     if (bytes.length < size) return s
-    return decoder.decode(bytes.subarray(0, Math.max(0, size - 1)))
+    const limit = size - 1
+    let o = 0
+    while (o < bytes.length) {
+        const clen = utf8Len(bytes[o]) || 1 // not UTF-8: a byte is a byte
+        if (o + clen > limit) break
+        o += clen
+    }
+    return decoder.decode(bytes.subarray(0, o))
 }
 
 /** C's `(int)double`: truncation toward zero. */
