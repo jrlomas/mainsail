@@ -949,6 +949,10 @@
             },
             "Unknown": "Unknown"
         },
+        "OpenamsPanel": {
+            "Headline": "OpenAMS",
+            "NoUnits": "No OpenAMS units are connected."
+        },
         "SpoolmanPanel": {
             "ActiveSpool": "Active Spool",
             "ChangeSpool": "Change Spool",

@@ -92,6 +92,11 @@ export const getters: GetterTree<GuiState, RootState> = {
             allPanels = allPanels.filter((name) => name !== 'afc')
         }
 
+        // remove openams panel, if no OpenAMS module exists in Klipper
+        if (!rootState.printer?.oams_manager) {
+            allPanels = allPanels.filter((name) => name !== 'openams')
+        }
+
         // remove mmu panel, if no Happy Hare exists in Klipper
         if (!rootState.printer?.mmu) {
             allPanels = allPanels.filter((name) => name !== 'mmu')

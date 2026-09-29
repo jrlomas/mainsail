@@ -2,6 +2,8 @@ import Vue from 'vue'
 import { ActionTree } from 'vuex'
 import { SocketState } from '@/store/socket/types'
 import { RootState } from '@/store/types'
+import { EventBus } from '@/plugins/eventBus'
+import { OPENAMS_SPOOLMAN_STATUS } from '@/components/panels/Openams/adapter'
 
 export const actions: ActionTree<SocketState, RootState> = {
     reset({ commit }) {
@@ -137,6 +139,10 @@ export const actions: ActionTree<SocketState, RootState> = {
 
             case 'notify_sensor_update':
                 dispatch('server/sensor/updateSensors', payload.params[0], { root: true })
+                break
+
+            case 'notify_openams_spoolman_status':
+                EventBus.$emit(OPENAMS_SPOOLMAN_STATUS, payload.params[0])
                 break
 
             default:

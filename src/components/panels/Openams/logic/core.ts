@@ -1,0 +1,193 @@
+// The core's web API (src/core/core.c and platform/core-wasm/core_wasm.c, in
+// web/core/index.js's shape): objects in, a view tree and action results out.
+//
+//   const core = createLogic();
+//   core.apply('openams_ui', 'oams1', statusObject);   // a whole object or a diff
+//   const view = core.view();                          // the panel tree
+//   core.action('unload fps1');                        // { kind: 'gcode', script }
+//   const stop = core.subscribe((view) => render(view)); // at most once per frame
+//
+// It owns one copy of every object it is fed (per unit for openams_ui) and
+// merges a diff into it key by key, then maps the merged copy: a whole object
+// and a diff are both correct.
+
+import { coreAction } from './actions'
+import { cut, jsonEqual } from './cstr'
+import {
+    applyComponentStatus,
+    applyLanes,
+    applyMetadata,
+    applyOpenamsUi,
+    applyPrintStats,
+    applySettings,
+    applySpoolList,
+    drain,
+    MAX_UNITS,
+    newModel,
+    refreshThis,
+} from './model'
+import type { Model } from './model'
+import { buildView } from './view'
+import type { ActionResult, Core, ObjectKind, View } from './types'
+
+/** One openams_ui copy per unit, plus one each for the singleton kinds. */
+const MAX_ENTRIES = MAX_UNITS + 6
+const KIND_LEN = 16
+const NAME_LEN = 24
+
+type Json = Record<string, unknown>
+
+interface Entry {
+    kind: string
+    name: string
+    copy: unknown
+}
+
+const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/** Add or replace every key of `update` on `dst`; whether anything changed.
+ *  A status diff arrives several times a second, so keys are compared one by
+ *  one instead of replacing the whole object. */
+function mergeInto(dst: Json, update: Json): boolean {
+    let changed = false
+    for (const [key, value] of Object.entries(update)) {
+        if (key in dst && jsonEqual(dst[key], value)) continue
+        dst[key] = value
+        changed = true
+    }
+    return changed
+}
+
+/** The TypeScript core: the same API and, held by tests, the same answers as
+ *  the C core's WebAssembly build. */
+export class OpenamsLogic implements Core {
+    private model: Model = newModel()
+    private entries: Entry[] = []
+    private listeners = new Set<(view: View) => void>()
+    private flushPending = false
+
+    /** The entry for (kind, name), created when new; null when the table is
+     *  full. Stored kind and name are cut like the C's buffers, and looked up by
+     *  the raw name, so a name too long to fit is never found again. */
+    private entry(kind: string, name: string): Entry | null {
+        const found = this.entries.find((e) => e.kind === kind && e.name === name)
+        if (found) return found
+        if (this.entries.length >= MAX_ENTRIES) return null
+        const created: Entry = { kind: cut(kind, KIND_LEN), name: cut(name, NAME_LEN), copy: null }
+        this.entries.push(created)
+        return created
+    }
+
+    /** Merge `obj` into the owned copy of (kind, name) and map the result.
+     *  Returns whether the copy's content changed. */
+    apply(kind: ObjectKind | string, name: string | null | undefined, obj: unknown): boolean {
+        // Objects cross the boundary as JSON, as they do into the wasm module.
+        const json = JSON.stringify(obj)
+        if (json === undefined) throw new TypeError('openams-core: apply() needs a JSON value')
+        const value: unknown = JSON.parse(json)
+        const changed = this.applyJson(kind, name ?? '', value)
+        // Alerts the mapping queued join the history, the way the wasm shim drains them.
+        drain(this.model)
+        this.requestFlush()
+        return changed
+    }
+
+    private applyJson(kind: string, name: string, obj: unknown): boolean {
+        const m = this.model
+
+        // spool_list and metadata are whole results, so the owned copy is replaced.
+        if (kind === 'spool_list' || kind === 'metadata') {
+            if (kind === 'spool_list' ? !Array.isArray(obj) : !isObject(obj)) return false
+            const e = this.entry(kind, name)
+            if (!e) return false
+            const changed = !(e.copy !== null && jsonEqual(e.copy, obj))
+            e.copy = obj
+            if (kind === 'spool_list') applySpoolList(m, obj)
+            else applyMetadata(m, obj)
+            refreshThis(m)
+            return changed
+        }
+
+        if (!['openams_ui', 'oams_manager', 'component_status', 'print_stats', 'toolhead'].includes(kind)) return false
+        if (!isObject(obj)) return false
+
+        const e = this.entry(kind, name)
+        if (!e) return false
+        if (e.copy === null) e.copy = {}
+        const copy = e.copy as Json
+        const changed = mergeInto(copy, obj)
+
+        if (kind === 'openams_ui') {
+            applyOpenamsUi(m, copy)
+        } else if (kind === 'oams_manager') {
+            if (isObject(copy.settings)) applySettings(m, copy.settings)
+            if (isObject(copy.lanes_by_fps)) applyLanes(m, copy.lanes_by_fps)
+        } else if (kind === 'component_status') {
+            applyComponentStatus(m, copy)
+        } else if (kind === 'print_stats') {
+            applyPrintStats(m, copy)
+        }
+        // `toolhead` (the active extruder) has no consumer yet: its copy is only kept.
+
+        refreshThis(m)
+        return changed
+    }
+
+    /** Drop every owned copy and reset the model, keeping the alert history
+     *  when `keepAlerts`. Call on a printer reset and on a socket reconnect. */
+    reset(keepAlerts?: boolean): void {
+        const saved = keepAlerts ? this.model.alerts : []
+        this.entries = []
+        this.model = newModel()
+        this.model.alerts = saved
+        this.requestFlush()
+    }
+
+    /** The current panel tree. */
+    view(): View {
+        return buildView(this.model)
+    }
+
+    /** Resolve an action line (a form fills its `{field}` placeholders). */
+    action(line: string, form?: Record<string, string | number | boolean> | null): ActionResult {
+        return coreAction(this.model, String(line), form ?? null)
+    }
+
+    /** Call `listener` with the current view after any apply() or reset(), at
+     *  most once per animation frame (a microtask where there is none). There is
+     *  no call on subscribe: read view() for the first paint. Returns the
+     *  unsubscribe function. */
+    subscribe(listener: (view: View) => void): () => void {
+        if (typeof listener !== 'function') throw new TypeError('openams-core: subscribe() needs a function')
+        this.listeners.add(listener)
+        return () => {
+            this.listeners.delete(listener)
+        }
+    }
+
+    private requestFlush(): void {
+        if (this.flushPending || this.listeners.size === 0) return
+        this.flushPending = true
+        const flush = (): void => this.flush()
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(flush)
+        else queueMicrotask(flush)
+    }
+
+    private flush(): void {
+        this.flushPending = false
+        if (this.listeners.size === 0) return
+        const view = this.view()
+        for (const listener of Array.from(this.listeners)) {
+            try {
+                listener(view)
+            } catch (err) {
+                console.error('openams-core: a subscriber threw', err)
+            }
+        }
+    }
+}
+
+/** A fresh core (the wasm build is a singleton; the logic is plain state). */
+export function createLogic(): OpenamsLogic {
+    return new OpenamsLogic()
+}

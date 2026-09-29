@@ -93,6 +93,7 @@ import MacrosPanel from '@/components/panels/MacrosPanel.vue'
 import MiniconsolePanel from '@/components/panels/MiniconsolePanel.vue'
 import MinSettingsPanel from '@/components/panels/MinSettingsPanel.vue'
 import MiscellaneousPanel from '@/components/panels/MiscellaneousPanel.vue'
+import OpenamsPanel from '@/components/panels/OpenamsPanel.vue'
 import SpoolmanPanel from '@/components/panels/SpoolmanPanel.vue'
 import MmuPanel from '@/components/panels/MmuPanel.vue'
 import StatusPanel from '@/components/panels/StatusPanel.vue'
@@ -112,6 +113,7 @@ import WebcamPanel from '@/components/panels/WebcamPanel.vue'
         MiniconsolePanel,
         MinSettingsPanel,
         MiscellaneousPanel,
+        OpenamsPanel,
         SpoolmanPanel,
         MmuPanel,
         StatusPanel,
