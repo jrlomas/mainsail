@@ -84,7 +84,7 @@ const SETTING_KEY = 32
 const SETTING_LABEL = 40
 const SETTING_NOTE = 64
 const PANEL_NOTICE = 40
-const LABEL_TEXT = 24
+const LABEL_TEXT = 32
 const ACTION_ID = 20
 const ACTION_LABEL = 20
 const ACTION_LINE = 56
@@ -917,6 +917,7 @@ export function buildView(m: Model): View {
             no_alerts: cut(str('LABEL_NO_ALERTS'), LABEL_TEXT),
             close: cut(str('LABEL_CLOSE'), LABEL_TEXT),
             cancel: cut(str('LABEL_CANCEL'), LABEL_TEXT),
+            no_response: cut(str('LABEL_NO_RESPONSE'), LABEL_TEXT),
         },
         spoolman: { online: m.spoolmanOnline, pending },
         settings: SETTING_KEYS.map((_, i) => buildSetting(m, i)),

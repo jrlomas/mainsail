@@ -15,11 +15,6 @@ export type FormValues = Record<string, string | number | boolean>
  *  answer (principle 9: a stalled progress must say why). */
 export const PENDING_MS = 8000
 
-/** What the panel says when an action got no answer. Every other string on the
- *  screen is the core's (UNIFIED_UI.md 4); this one has no entry in
- *  design/strings.json, so it sits here until it gets one. */
-export const NO_RESPONSE = 'No response from the printer'
-
 /** A transient message's own lifetime: long enough to read, then gone. */
 const FLASH_MS = 6000
 
@@ -213,7 +208,8 @@ export class Interactivity {
      *  patience on screen. */
     private timeOut(action: ViewAction): void {
         this.release(action.line)
-        this.flash(NO_RESPONSE, 'error')
+        // The text is the core's, like every other string on the screen (labels.no_response).
+        this.flash(this.current?.labels.no_response ?? '', 'error')
     }
 
     /** The panel is going away: nothing may fire after it. */

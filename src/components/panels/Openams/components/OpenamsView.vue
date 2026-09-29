@@ -45,8 +45,11 @@ export type Theme = 'host' | 'dark' | 'light'
  * and emits `request` with the ActionResult for every action that has one. That
  * event is the host's contract: a Mainsail wrapper sends the gcode or makes the
  * RPC call, so the panel itself never talks to a printer. */
-@Component({ components: { ActionDialog, PanelBar, ToolheadCard, UnitSection } })
-export default class OpenamsPanel extends Vue {
+// The name is spelled out rather than taken from the class: in Mainsail's
+// tree this view and the panel wrapper beside it are both registered, and the
+// wrapper keeps the name OpenamsPanel.
+@Component({ name: 'OpenamsView', components: { ActionDialog, PanelBar, ToolheadCard, UnitSection } })
+export default class OpenamsView extends Vue {
     @Prop({ default: null }) readonly logic!: Core | null
     @Prop({ default: 'host' }) readonly theme!: Theme
 

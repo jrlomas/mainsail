@@ -17,7 +17,7 @@ import BaseMixin from '@/components/mixins/base'
 import { EventBus } from '@/plugins/eventBus'
 import { OpenamsAdapter, OPENAMS_SPOOLMAN_STATUS } from './Openams/adapter'
 import type { OpenamsStoreState } from './Openams/adapter'
-import OpenamsView from './Openams/components/OpenamsPanel.vue'
+import OpenamsView from './Openams/components/OpenamsView.vue'
 import type { ActionResult } from './Openams/logic'
 
 @Component({ components: { OpenamsView } })

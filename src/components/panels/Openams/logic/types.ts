@@ -185,6 +185,8 @@ export interface ViewLabels {
     no_alerts: string
     close: string
     cancel: string
+    /** What the panel says when an action got no answer. */
+    no_response: string
 }
 
 export interface View {

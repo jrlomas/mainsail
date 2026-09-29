@@ -4,7 +4,7 @@
 // host's app.
 import './tokens.css'
 
-export { default as OpenamsPanel } from './components/OpenamsPanel.vue'
+export { default as OpenamsView } from './components/OpenamsView.vue'
 export { default as ToolheadCard } from './components/ToolheadCard.vue'
 export { default as UnitSection } from './components/UnitSection.vue'
 export { default as LaneTile } from './components/LaneTile.vue'
@@ -21,4 +21,4 @@ export { default as ToolheadIcon } from './components/ToolheadIcon.vue'
 export { default as ToneIcon } from './components/ToneIcon.vue'
 export { default as RfidIcon } from './components/RfidIcon.vue'
 export { default as OamsIcon } from './components/OamsIcon.vue'
-export type { Theme } from './components/OpenamsPanel.vue'
+export type { Theme } from './components/OpenamsView.vue'
