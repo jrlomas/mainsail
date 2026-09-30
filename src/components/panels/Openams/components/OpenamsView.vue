@@ -26,6 +26,10 @@
 import { Component, Prop, ProvideReactive, Vue, Watch } from 'vue-property-decorator'
 import type { ActionResult, Core, Tone, View } from '../logic/index'
 import { Interactivity, INTERACT, type FormValues } from '../interact'
+// The root component brings the design tokens itself: a host wrapper imports
+// this file directly, not the package index, and without them every
+// var(--oams-*) resolves to nothing (no surfaces, no status colors).
+import '../tokens.css'
 import ActionDialog from './ActionDialog.vue'
 import PanelBar from './PanelBar.vue'
 import ToolheadCard from './ToolheadCard.vue'
