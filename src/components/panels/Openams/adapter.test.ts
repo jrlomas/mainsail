@@ -3,7 +3,7 @@
 // view must come out with the toolheads and units it holds.
 
 import { describe, expect, it } from 'vitest'
-import { OpenamsAdapter } from './adapter'
+import { OpenamsAdapter, panelLanguage } from './adapter'
 import type { OpenamsStoreState } from './adapter'
 
 const lane = (id: string, group: string, bay: string) => ({
@@ -89,5 +89,31 @@ describe('the adapter fed an OpenAMS store', () => {
         adapter.feedStore(store)
 
         expect(JSON.stringify(adapter.view())).toBe(before)
+    })
+})
+
+// The panel inside Mainsail speaks the page's language, not its own default:
+// a Mainsail page is the user's, and the panel is a guest on it (PRINCIPLES.md
+// 6). The mapping is the one place the two sets of codes meet, because they are
+// not the same codes: the logic's carry the script or the region.
+describe('panelLanguage', () => {
+    it('carries a locale both sets name the same way straight through', () => {
+        for (const code of ['en', 'de', 'es', 'fr', 'it', 'ja', 'ko', 'pl', 'ru']) {
+            expect(panelLanguage(code)).toBe(code)
+        }
+    })
+
+    it('names the script or the region that Mainsail leaves out', () => {
+        expect(panelLanguage('zh')).toBe('zh-Hans')
+        expect(panelLanguage('pt')).toBe('pt-BR')
+    })
+
+    it('answers in English for a locale the panel does not carry', () => {
+        // Traditional script is not ours, and Ukrainian is never Russian.
+        expect(panelLanguage('zh_TW')).toBe('en')
+        expect(panelLanguage('uk')).toBe('en')
+        // A code nothing has heard of, and no code at all.
+        expect(panelLanguage('xx')).toBe('en')
+        expect(panelLanguage('')).toBe('en')
     })
 })

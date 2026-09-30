@@ -17,6 +17,33 @@ export interface OpenamsStoreState {
     server?: { spoolman?: { spools?: unknown } } | null
 }
 
+/** Mainsail's locales (the file names in its `src/locales`) and the logic's,
+ *  which are not the same set: the logic's codes carry the script or the region
+ *  Mainsail leaves to the host to work out. */
+const PANEL_LANGUAGES = new Map<string, string>([
+    ['en', 'en'],
+    ['de', 'de'],
+    ['es', 'es'],
+    ['fr', 'fr'],
+    ['it', 'it'],
+    ['ja', 'ja'],
+    ['ko', 'ko'],
+    ['pl', 'pl'],
+    ['ru', 'ru'],
+    ['zh', 'zh-Hans'],
+    ['pt', 'pt-BR'],
+    // zh_TW is Traditional script and uk is not Russian: both answer in English.
+    ['zh_TW', 'en'],
+    ['uk', 'en'],
+])
+
+/** The language the panel is drawn in, from the host's own: English for a
+ *  locale Mainsail carries and the logic does not. Pure, so the fork can test
+ *  the mapping without a store or a socket. */
+export function panelLanguage(mainsailLocale: string): string {
+    return PANEL_LANGUAGES.get(mainsailLocale) ?? 'en'
+}
+
 type Json = Record<string, unknown>
 
 const isObject = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value)

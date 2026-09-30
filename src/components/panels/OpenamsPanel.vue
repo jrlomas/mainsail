@@ -6,7 +6,7 @@
         :collapsible="true"
         card-class="openams-control-panel">
         <v-card-text class="pt-1">
-            <openams-view :logic="adapter.logic" theme="host" @request="onRequest" />
+            <openams-view :logic="adapter.logic" :language="language" theme="host" @request="onRequest" />
         </v-card-text>
     </panel>
 </template>
@@ -15,7 +15,7 @@ import { Component, Mixins } from 'vue-property-decorator'
 import { mdiViewGrid } from '@mdi/js'
 import BaseMixin from '@/components/mixins/base'
 import { EventBus } from '@/plugins/eventBus'
-import { OpenamsAdapter, OPENAMS_SPOOLMAN_STATUS } from './Openams/adapter'
+import { OpenamsAdapter, OPENAMS_SPOOLMAN_STATUS, panelLanguage } from './Openams/adapter'
 import type { OpenamsStoreState } from './Openams/adapter'
 import OpenamsView from './Openams/components/OpenamsView.vue'
 import type { ActionResult } from './Openams/logic'
@@ -71,6 +71,18 @@ export default class OpenamsPanel extends Mixins(BaseMixin) {
         }
 
         return objects
+    }
+
+    /** The language the panel is drawn in, which is the page's: inside
+     *  Mainsail the language is the user's choice in Mainsail, not the panel's
+     *  (principle 1, we are a guest), so the panel has no picker of its own and
+     *  reads the host's locale.
+     *
+     *  A getter, not a field read once: that makes it a computed property, and
+     *  vue-i18n keeps `locale` in a reactive `_vm` of its own, so picking a
+     *  language in Mainsail re-reads this and hands the view a new one. */
+    get language(): string {
+        return panelLanguage(this.$i18n.locale)
     }
 
     /** What the user chose in the panel, sent the way Mainsail sends its own:

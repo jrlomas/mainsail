@@ -127,8 +127,15 @@ export interface Toolhead {
     setPoint: number
 }
 
+/** What an alert's text is: the host's own words, or one of the two the core
+ *  raises itself, kept as numbers and turned into a sentence when the view is
+ *  built (mmu_alert_kind_t). */
+export const AlertKind = { PLAIN: 0, LOW_FILAMENT: 1, SHORTFALL: 2 } as const
+
 export interface Alert {
-    text: string
+    text: string // AlertKind.PLAIN only
+    kind: number
+    arg: [number, number, number] // low filament: bay, grams; shortfall: tool, need, have
     severity: number
     unit: number // the unit it is about; -1 = none
     toolhead: number // the toolhead it is about; -1 = none
@@ -429,10 +436,37 @@ function queueAlert(
     if (m.pending.length >= MAX_PENDING_ALERTS) return
     m.pending.push({
         text: cut(text, ALERT_TEXT),
+        kind: AlertKind.PLAIN,
+        arg: [0, 0, 0],
         severity,
         unit: i8(unit),
         toolhead: i8(toolhead),
         laneFault,
+        unread: true,
+    })
+}
+
+/** Queue a composed alert (mmu_model_push_alert_pending_tpl): a silent drop
+ *  when the queue is full, and the numbers kept as the C's int16 fields. */
+function queueComposed(
+    m: Model,
+    kind: number,
+    severity: number,
+    unit: number,
+    toolhead: number,
+    a0: number,
+    a1: number,
+    a2: number
+): void {
+    if (m.pending.length >= MAX_PENDING_ALERTS) return
+    m.pending.push({
+        text: '',
+        kind,
+        arg: [i16(a0), i16(a1), i16(a2)],
+        severity,
+        unit: i8(unit),
+        toolhead: i8(toolhead),
+        laneFault: false,
         unread: true,
     })
 }
@@ -648,25 +682,6 @@ function mapDryer(u: Unit, dryer: unknown): void {
     }
 }
 
-/** The display label of one stage step name; a name newer than this list
- *  shows as itself. */
-function stageLabel(name: string): string {
-    switch (name) {
-        case 'cut':
-            return 'Cut filament'
-        case 'retract':
-            return 'Pull back current filament'
-        case 'feed':
-            return 'Push new filament into extruder'
-        case 'purge':
-            return 'Purge old filament'
-        case 'calibrate':
-            return 'Calibrate PTFE length'
-        default:
-            return name
-    }
-}
-
 /** `lane.stage` is null or [plan, index, failed]: the ordered step names, the
  *  running step or null, and the name of the step that failed or null. */
 function mapStage(th: Toolhead, stage: unknown): void {
@@ -681,7 +696,7 @@ function mapStage(th: Toolhead, stage: unknown): void {
     for (let i = 0; i < count; i++) {
         const step = plan[i]
         // A step that is not a string leaves its (zeroed) slot empty.
-        th.steps.push(typeof step === 'string' ? cut(stageLabel(step), STEP_TEXT) : '')
+        th.steps.push(typeof step === 'string' ? cut(step, STEP_TEXT) : '') // the host's stage name; the view labels it
     }
     if (typeof index === 'number') th.stepCurrent = i8(index)
 
@@ -919,13 +934,15 @@ export function applyComponentStatus(m: Model, obj: unknown): boolean {
                 // Push a low-filament alert the first time a slot crosses below 15%:
                 // from >= 15 or from unknown. It is about this unit's bay.
                 if (s.remainingPct >= 0 && s.remainingPct < 15 && (old < 0 || old >= 15)) {
-                    queueAlert(
+                    queueComposed(
                         m,
-                        `Low filament: ${u.name} Spool ${split.slot + 1} has ${s.remainingG} g left`,
+                        AlertKind.LOW_FILAMENT,
                         Sev.INFO,
                         m.units.indexOf(u),
                         -1,
-                        false
+                        split.slot,
+                        s.remainingG,
+                        0
                     )
                 }
             }
@@ -1058,7 +1075,7 @@ export function applyMetadata(m: Model, obj: unknown): boolean {
             // About the job on the group's lane: the toolhead's alert, a caution.
             const first = m.groups[gi].members[0]
             const thIdx = first && first.unit >= 0 && first.unit < m.units.length ? m.units[first.unit].toolhead : -1
-            queueAlert(m, `T${i} needs ${need} g; its spools have ${have} g`, Sev.INFO, -1, thIdx, false)
+            queueComposed(m, AlertKind.SHORTFALL, Sev.INFO, -1, thIdx, i, need, have)
         }
     }
     refreshThis(m)

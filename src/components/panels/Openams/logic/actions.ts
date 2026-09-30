@@ -10,7 +10,7 @@
 import { cut } from './cstr'
 import { Busy, DryState, SlotState, slotGroup, slotId } from './model'
 import type { Model } from './model'
-import { str } from './strings'
+import { format, str } from './strings'
 import type { ActionResult } from './types'
 
 // ---------------------------------------------------------------- results
@@ -401,7 +401,7 @@ export function actionsMap(line: string, m: Model, capacity = 512): Mapped {
     const w = new Writer(capacity)
     const r = dispatch(w, line, m)
     if (r.rc === 1) {
-        return w.over ? refuse('command too long') : { rc: 1, script: w.script }
+        return w.over ? refuse(str('REASON_CMD_TOO_LONG')) : { rc: 1, script: w.script }
     }
     return r
 }
@@ -482,13 +482,13 @@ function fillLine(line: string, form: Record<string, unknown> | null): { line: s
         const end = line.indexOf('}', p)
         const key = line[p] === '{' && end >= 0 ? line.slice(p + 1, end) : null
         if (key === null || key.length === 0 || key.length >= 32) {
-            if (out.length + 1 >= LIMIT) return { reason: 'action line too long' }
+            if (out.length + 1 >= LIMIT) return { reason: str('REASON_LINE_TOO_LONG') }
             out += line[p++]
             continue
         }
         const value = formText(form ? form[key] : undefined)
-        if (value === null) return { reason: `missing form value: ${key}` }
-        if (out.length + value.length >= LIMIT) return { reason: 'action line too long' }
+        if (value === null) return { reason: format('REASON_FORM_MISSING', { key }, 160) }
+        if (out.length + value.length >= LIMIT) return { reason: str('REASON_LINE_TOO_LONG') }
         out += value
         p = end + 1
     }

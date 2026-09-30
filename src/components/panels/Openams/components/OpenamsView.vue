@@ -1,6 +1,6 @@
 <template>
     <div class="oams-panel panel" :data-theme="theme">
-        <panel-bar v-if="theme !== 'host' && view" :view="view" />
+        <panel-bar v-if="theme !== 'host' && view" :view="view" @language="changeLanguage" />
         <div v-if="note" class="notice panel-notice" :class="`tone-${note.tone}`" role="status">{{ note.text }}</div>
         <template v-if="view">
             <toolhead-card
@@ -40,6 +40,8 @@ export type Theme = 'host' | 'dark' | 'light'
  *   logic  the Core (web/logic) to draw; without one the panel draws its frame.
  *   theme  "host" (the host's card, text and font, through Vuetify's --v-*
  *          variables), "dark" or "light" for a standalone page.
+ *   language  the language a host is in, which the panel then draws in; null
+ *          for a standalone page, which owns the choice itself.
  *
  * It also owns the one interaction state (Interactivity) and the one dialog,
  * and emits `request` with the ActionResult for every action that has one. That
@@ -52,10 +54,14 @@ export type Theme = 'host' | 'dark' | 'light'
 export default class OpenamsView extends Vue {
     @Prop({ default: null }) readonly logic!: Core | null
     @Prop({ default: 'host' }) readonly theme!: Theme
+    @Prop({ default: null }) readonly language!: string | null
 
     view: View | null = null
     private stop: (() => void) | null = null
     private made: Interactivity | null = null
+    /** The language the core is drawing in, and so the one the panel tags
+     *  itself with; the settings popover reports a new one. */
+    private code = 'en'
 
     /** The interaction state, provided to every widget below. */
     @ProvideReactive(INTERACT)
@@ -65,9 +71,6 @@ export default class OpenamsView extends Vue {
     }
 
     mounted() {
-        // The core writes English in v1; the strings live in the host's own
-        // table (UNIFIED_UI.md 4), so a host that sets a language keeps it.
-        if (!this.$el.closest('[lang]')) this.$el.setAttribute('lang', 'en')
         this.watchLogic()
     }
 
@@ -81,6 +84,12 @@ export default class OpenamsView extends Vue {
     @Watch('logic')
     onLogic() {
         this.watchLogic()
+    }
+
+    /** A host changed the language it is in: draw the panel in it again. */
+    @Watch('language')
+    onLanguage() {
+        this.applyLanguage()
     }
 
     /** The one message row: the panel's own transient message while it lasts,
@@ -103,10 +112,57 @@ export default class OpenamsView extends Vue {
         }
         this.view = logic.view()
         this.ctrl.setView(this.view)
+        this.tagLanguage()
+        this.applyLanguage()
         this.stop = logic.subscribe((view: View) => {
             this.view = view
             this.ctrl.setView(view)
         })
+    }
+
+    /** The Language row was used: ask the core to switch and draw the view
+     *  again. The language is module state inside the core, not model state,
+     *  so nothing the printer sent changed - only the words it is drawn with.
+     *  The host is told too, so the page around the panel can say which
+     *  language it is in - a Mainsail page is the user's, not the panel's. */
+    changeLanguage(code: string): void {
+        const logic = this.logic
+        if (!logic || !logic.setLanguage(code)) return
+        this.code = code
+        this.view = logic.view()
+        this.ctrl.setView(this.view)
+        this.tagLanguage()
+        this.$emit('language', code)
+    }
+
+    /** A host that names the language owns the panel's words: inside Mainsail
+     *  the page's language is the user's, and the panel is a guest on it, so it
+     *  is handed the core already drawing in that language. A null prop is the
+     *  standalone page, which owns the choice itself and has a picker for it;
+     *  nothing is applied, and the panel is exactly what it always was. */
+    private applyLanguage(): void {
+        if (this.language !== null) this.changeLanguage(this.language)
+    }
+
+    /** `lang` on the panel, so the browser, a screen reader and a font stack
+     *  all know which language the text on it is in - always the panel's own.
+     *  The page's `lang` describes the page and says nothing about us: a
+     *  Mainsail page carries `lang="en"` whatever language the user picked, so
+     *  a panel that deferred to it tagged German text English and the browser
+     *  picked the wrong font (Japanese read as Chinese). The panel's words are
+     *  only ever guaranteed to be in the language the core is drawing in, so
+     *  that is what the tag has to say.
+     *
+     *  The code is the core's, read back from the one settings row that is a
+     *  choice rather than a switch: the panel can be handed a core already
+     *  drawing in another language (the gallery's ?lang=), and the tag has to
+     *  say so - a panel that says `lang="en"` over German text picks the
+     *  English font for it. The row's own choice is the answer; the last one
+     *  picked is the fallback for a view that has no row to read. */
+    private tagLanguage(): void {
+        const row = this.view?.settings.find((r) => r.options.length > 0)
+        const code = (row && row.selected >= 0 ? row.options[row.selected]?.code : null) ?? this.code
+        this.$el.setAttribute('lang', code)
     }
 
     /** Ask the logic what an action line does, and hand a request to the host.

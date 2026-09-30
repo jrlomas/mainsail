@@ -4,9 +4,21 @@
             <oams-icon :path="mdiBell" />
             <span v-if="view.unread_count > 0" class="badge">{{ view.unread_count }}</span>
         </button>
-        <button v-if="view.settings.length" type="button" class="icon-btn" :aria-label="view.labels.settings">
+        <button
+            v-if="view.settings.length"
+            type="button"
+            class="icon-btn"
+            :aria-label="view.labels.settings"
+            :popovertarget="anchor"
+            data-popover-invoker="settings">
             <oams-icon :path="mdiCog" />
         </button>
+        <settings-popover
+            :anchor-id="anchor"
+            name="settings"
+            :heading="view.labels.settings"
+            :view="view"
+            @language="onLanguage" />
     </div>
 </template>
 
@@ -15,15 +27,27 @@ import { Component, Prop, Vue } from 'vue-property-decorator'
 import { mdiBell, mdiCog } from '@mdi/js'
 import type { View } from '../logic/index'
 import OamsIcon from './OamsIcon.vue'
+import SettingsPopover from './SettingsPopover.vue'
+import { newAnchor } from '../popover'
 
 /** The panel-level bar: the bell and the settings, for the standalone page
- *  (in a host the host's own bar shows them). */
-@Component({ components: { OamsIcon } })
+ *  (in a host the host's own bar shows them). The settings button opens the
+ *  settings popover, which holds the five switches and the language choice. */
+@Component({ components: { OamsIcon, SettingsPopover } })
 export default class PanelBar extends Vue {
     @Prop({ required: true }) readonly view!: View
 
+    /** One id per bar, so a page of twelve panels has twelve settings buttons
+     *  and each opens its own popover (see popover.ts's newAnchor). */
+    readonly anchor = newAnchor()
+
     mdiBell = mdiBell
     mdiCog = mdiCog
+
+    /** A language was picked: the panel asks the core to switch and redraws. */
+    onLanguage(code: string): void {
+        this.$emit('language', code)
+    }
 }
 </script>
 

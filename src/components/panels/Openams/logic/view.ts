@@ -24,7 +24,9 @@ import {
     toolShortfall,
 } from './model'
 import type { Alert, Model, Toolhead, Unit } from './model'
+import { AlertKind } from './model'
 import {
+    copy,
     fmtDryerActive,
     fmtEnv,
     fmtExtruderTitle,
@@ -33,13 +35,14 @@ import {
     fmtPressure,
     fmtRunout,
     fmtRunoutNoSpare,
+    fmtLowFilament,
     fmtScale,
     fmtShortfall,
+    fmtSpoolError,
     fmtSpoolLabel,
     fmtSpoolOption,
     fmtToolSpool,
     fmtUnitSpool,
-    LANG_CODES,
     language,
     languages,
     SETTING_KEYS,
@@ -68,28 +71,26 @@ import type {
 const ID = 16
 const LABEL = 16
 const MATERIAL = 24
-const GRAMS = 12
-const PCT = 8
-const TITLE = 24
-const SUBTITLE = 48
-const MESSAGE = 96
-const STEP_LABEL = 32
+const GRAMS = 20
+const PCT = 16
+const TITLE = 32
+const SUBLABEL = 32
+const MESSAGE = 176
 const PRESSURE_TEXT = 12
 const SCALE = 8
 const UNIT_ID = 8
-const ENV_TEXT = 24
-const DRYER_TEXT = 32
-const FAMILY = 16
+const ENV_TEXT = 48
+const DRYER_TEXT = 56
 const ALERT_CODE = 40
-const ALERT_TEXT = 96
 const ALERT_UNIT = 8
-const TAG_DETAIL = 96
+const ALERT_SLOT = 32
+const ALERT_TEXT = 144 // VIEW_ALERT_TEXT_LEN: a composed alert's sentence
+const SPOOL_NAME = 64 // the {spool} of a low-filament sentence
+const RUNOUT_TARGET = LABEL * 3
 const SETTING_KEY = 32
 const ACTION_ID = 20
 const ACTION_LINE = 56
-const ACTION_REASON = 56
-const FIELD_ID = 12
-const OPTION_LABEL = 44
+const OPTION_LABEL = 72
 
 const MAX_ACTIONS = 8
 const MAX_ACTIONS_PER_ALERT = 2
@@ -205,7 +206,7 @@ class ActionList {
 function check(a: ViewAction, line: string, m: Model): void {
     const r = actionsCheck(line, m)
     a.enabled = r.enabled
-    a.reason = r.enabled ? '' : cut(r.why, ACTION_REASON)
+    a.reason = r.enabled ? '' : r.why // borrowed in C: the table's words, or the host's, never cut
 }
 
 /** A plain action: the line is built once, sent as it stands and checked as it stands. */
@@ -289,11 +290,11 @@ function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
                 positioning: 'TAGD_POSITIONING',
                 empty: 'TAGD_NOT_INSERTED',
             }[state as string] ?? 'TAGD_CONFIRM'
-        tag.detail = cut(str(detailId as 'TAGD_CONFIRM'), TAG_DETAIL)
+        tag.detail = str(detailId as 'TAGD_CONFIRM') // a table string, borrowed in C
         // An error on the bay the lane fault names says what the host said, and
         // carries the host's code as its own field.
         if (state === 'error' && th && th.hasError && th.errorUnit === unitIdx && th.errorSlot === bay) {
-            if (th.errorText) tag.detail = cut(th.errorText, TAG_DETAIL)
+            tag.detail = th.errorText || th.errorCode // the host's own words, borrowed in C
             tag.code = cut(th.errorCode, ALERT_CODE)
         }
     }
@@ -316,7 +317,7 @@ function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
         bay,
         tool,
         label: cut(label, LABEL),
-        sublabel: cut(fmtSpoolLabel(bay), LABEL),
+        sublabel: fmtSpoolLabel(bay, SUBLABEL),
         spare,
         state,
         tag,
@@ -329,9 +330,9 @@ function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
         name: material,
         material,
         brand: cut(s.brand, MATERIAL),
-        grams_text: cut(fmtGrams(s.remainingG), GRAMS),
+        grams_text: fmtGrams(s.remainingG, GRAMS),
         pct: s.remainingPct,
-        pct_text: cut(fmtPct(s.remainingPct), PCT),
+        pct_text: fmtPct(s.remainingPct, PCT),
         low: s.remainingPct >= 0 && s.remainingPct < 15,
         rfid: s.infoSource === InfoSource.TAG,
         pending_confirmation: s.pendingConfirmation,
@@ -367,7 +368,7 @@ function tileActions(m: Model, unitIdx: number, bay: number): ViewAction[] {
                 if (sp.id === 0) continue
                 options.push({
                     value: sp.id,
-                    label: cut(fmtSpoolOption(sp.vendor, sp.material, sp.remainingG), OPTION_LABEL),
+                    label: fmtSpoolOption(sp.vendor, sp.material, sp.remainingG, OPTION_LABEL),
                 })
                 // The bay's current link (else the first spool) is the default.
                 if (options.length === 1 || sp.id === s.spoolId) value = f32(sp.id)
@@ -466,7 +467,7 @@ function unitActions(m: Model, unitIdx: number): ViewAction[] {
         }
         if (u.cannotDryReason) {
             a.enabled = false
-            a.reason = cut(u.cannotDryReason, ACTION_REASON)
+            a.reason = u.cannotDryReason // the host's own words, borrowed in C
         } else {
             check(a, cut(`dry ${u.name} start ${target}C ${hours}h`, ACTION_LINE), m)
         }
@@ -494,7 +495,7 @@ function buildUnit(m: Model, unitIdx: number): ViewUnit {
     // shows "Offline" in place of its reading, and has no dryer pill.
     const env =
         u.connected && (u.hasHumidityPct || u.hasTemp)
-            ? { text: cut(fmtEnv(u.hasHumidityPct, u.humidityPct, u.hasTemp, u.tempC), ENV_TEXT) }
+            ? { text: fmtEnv(u.hasHumidityPct, u.humidityPct, u.hasTemp, u.tempC, ENV_TEXT) }
             : null
 
     let dryer: ViewUnit['dryer'] = null
@@ -503,15 +504,15 @@ function buildUnit(m: Model, unitIdx: number): ViewUnit {
         // Only a host that reported the supply can say it is missing: the AMS HT
         // has no monitor, so its adapter is unknown, not absent.
         let text = ''
-        if (tone === 'heat') text = fmtDryerActive(u.dryTargetC, u.dryRemainingMin)
-        else if (tone === 'cool') text = str('DRYER_COOLING')
+        if (tone === 'heat') text = fmtDryerActive(u.dryTargetC, u.dryRemainingMin, DRYER_TEXT)
+        else if (tone === 'cool') text = copy(str('DRYER_COOLING'), DRYER_TEXT)
         // A dryer fault is an item of the unit's alert, not a pill.
-        dryer = { text: cut(text, DRYER_TEXT), tone, adapter_missing: u.hasPowerAdapter && !u.powerAdapter }
+        dryer = { text, tone, adapter_missing: u.hasPowerAdapter && !u.powerAdapter }
     }
 
     return {
         id: cut(u.name, UNIT_ID),
-        title: cut(variantName(u.variant), TITLE),
+        title: variantName(u.variant),
         subtitle: cut(u.name, UNIT_ID),
         online: u.connected,
         status_text: u.connected ? '' : str('UNIT_OFFLINE'),
@@ -520,7 +521,7 @@ function buildUnit(m: Model, unitIdx: number): ViewUnit {
         alert: scanAlerts(m, unitIdx, -1),
         // serial and firmware: no real-host field carries these yet, so they are
         // left blank rather than invented.
-        info: { serial: '', firmware: '', family: cut(variantName(u.variant), FAMILY) },
+        info: { serial: '', firmware: '', family: variantName(u.variant) },
         actions: unitActions(m, unitIdx),
         bays: u.slots.map((_, bay) => buildTile(m, unitIdx, bay)),
     }
@@ -596,13 +597,13 @@ function faultItem(m: Model, th: Toolhead): ViewAlert {
     let slot: string | null = null
     if (th.errorUnit >= 0 && th.errorUnit < m.units.length) {
         unit = cut(m.units[th.errorUnit].name, ALERT_UNIT)
-        if (th.errorSlot >= 0) slot = cut(slotId(m, th.errorUnit, th.errorSlot), LABEL)
+        if (th.errorSlot >= 0) slot = cut(slotId(m, th.errorUnit, th.errorSlot), ALERT_SLOT)
     }
     return {
         severity: SEVERITY[th.errorSeverity],
         code: cut(th.errorCode, ALERT_CODE),
         title: alertTitle(th.errorSeverity),
-        text: cut(th.errorText || th.errorCode, ALERT_TEXT),
+        text: th.errorText || th.errorCode, // borrowed in C
         unit,
         slot_id: slot,
         when_text: '',
@@ -611,13 +612,25 @@ function faultItem(m: Model, th: Toolhead): ViewAlert {
     }
 }
 
+/** An alert's sentence: the host's own words as they are, or - for the two the
+ *  core raises itself, kept as numbers - the current language's template
+ *  filled in (alert_text() in view.c). */
+function alertText(m: Model, a: Alert): string {
+    if (a.kind === AlertKind.LOW_FILAMENT) {
+        const name = a.unit >= 0 && a.unit < m.units.length ? m.units[a.unit].name : ''
+        return fmtLowFilament(fmtUnitSpool(name, a.arg[0], SPOOL_NAME), a.arg[1], ALERT_TEXT)
+    }
+    if (a.kind === AlertKind.SHORTFALL) return fmtShortfall(a.arg[0], a.arg[1], a.arg[2], ALERT_TEXT)
+    return a.text
+}
+
 /** An alert-history entry as an item (it carries no actions of its own). */
 function historyItem(m: Model, a: Alert): ViewAlert {
     return {
         severity: SEVERITY[a.severity],
         code: '',
         title: alertTitle(a.severity),
-        text: cut(a.text, ALERT_TEXT),
+        text: alertText(m, a),
         unit: a.unit >= 0 && a.unit < m.units.length ? cut(m.units[a.unit].name, ALERT_UNIT) : null,
         slot_id: null,
         when_text: '',
@@ -667,7 +680,7 @@ function scanAlerts(m: Model, unitIdx: number, thIdx: number): ViewAlertGroup | 
             severity: 'pause',
             code: '',
             title: alertTitle(Sev.PAUSE),
-            text: cut(str('ALERT_DRYER'), ALERT_TEXT),
+            text: str('ALERT_DRYER'),
             unit: cut(u.name, ALERT_UNIT),
             slot_id: null,
             when_text: '',
@@ -680,7 +693,7 @@ function scanAlerts(m: Model, unitIdx: number, thIdx: number): ViewAlertGroup | 
             severity: 'info',
             code: '',
             title: alertTitle(Sev.INFO),
-            text: cut(str('ALERT_ADAPTER'), ALERT_TEXT),
+            text: str('ALERT_ADAPTER'),
             unit: cut(u.name, ALERT_UNIT),
             slot_id: null,
             when_text: '',
@@ -692,7 +705,7 @@ function scanAlerts(m: Model, unitIdx: number, thIdx: number): ViewAlertGroup | 
         if (a.laneFault) continue
         if (unitIdx >= 0 ? a.unit !== unitIdx : !(a.unit < 0 && a.toolhead === thIdx)) continue
         if (unitIdx >= 0) continue // low filament: the tile's ring says it
-        if (th && buildMessage(m, th).text === cut(a.text, MESSAGE)) continue // the message row says it
+        if (th && buildMessage(m, th).text === alertText(m, a)) continue // the message row says it
         add(1, a.severity, () => historyItem(m, a))
     }
 
@@ -720,8 +733,8 @@ function runoutTool(m: Model, unit: number, slot: number): { name: string; gi: n
  *  is left" (an error) when no target is named and the group has none. */
 function runoutText(m: Model, th: Toolhead): { text: string; error: boolean } {
     const from = runoutTool(m, th.runoutFromUnit, th.runoutFromSlot)
-    if (th.runoutFromUnit < 0 && th.runoutNote) return { text: th.runoutNote, error: false } // the host's own words
-    if (th.runoutFromUnit < 0) return { text: str('STATUS_RUNOUT'), error: false }
+    if (th.runoutFromUnit < 0 && th.runoutNote) return { text: copy(th.runoutNote, MESSAGE), error: false } // the host's own words
+    if (th.runoutFromUnit < 0) return { text: copy(str('STATUS_RUNOUT'), MESSAGE), error: false }
 
     let to = ''
     if (th.runoutToUnit >= 0 && th.runoutToUnit < m.units.length && th.runoutToSlot >= 0) {
@@ -729,14 +742,14 @@ function runoutText(m: Model, th: Toolhead): { text: string; error: boolean } {
         const toUnit = m.units[th.runoutToUnit].name
         to =
             toTool.gi >= 0 && toTool.gi === from.gi
-                ? fmtUnitSpool(toUnit, th.runoutToSlot)
-                : fmtToolSpool(toTool.name, toUnit, th.runoutToSlot)
+                ? fmtUnitSpool(toUnit, th.runoutToSlot, RUNOUT_TARGET)
+                : fmtToolSpool(toTool.name, toUnit, th.runoutToSlot, RUNOUT_TARGET)
     }
     // No target and nothing left to fall back to: say so plainly.
     if (!to && from.gi >= 0 && !groupNextSpare(m, from.gi)) {
-        return { text: fmtRunoutNoSpare(from.name), error: true }
+        return { text: fmtRunoutNoSpare(from.name, MESSAGE), error: true }
     }
-    return { text: fmtRunout(from.name, to), error: false }
+    return { text: fmtRunout(from.name, to, MESSAGE), error: false }
 }
 
 /** One message line: an error > a runout > a notice > the plain status. */
@@ -746,12 +759,12 @@ function buildMessage(m: Model, th: Toolhead): ViewToolhead['message'] {
     }
     if (th.runoutActive) {
         const r = runoutText(m, th)
-        return { text: cut(r.text, MESSAGE), tone: r.error ? 'error' : 'info' }
+        return { text: r.text, tone: r.error ? 'error' : 'info' }
     }
     if (th.currentGroup >= 0 && th.currentGroup < m.groups.length) {
         const tool = groupToolIndex(m.groups[th.currentGroup].name)
         const short = tool >= 0 ? toolShortfall(m, tool) : null
-        if (short) return { text: cut(fmtShortfall(tool, short.need, short.have), MESSAGE), tone: 'info' }
+        if (short) return { text: fmtShortfall(tool, short.need, short.have, MESSAGE), tone: 'info' }
     }
     // A tile in error that no lane fault covers: the tag says where, this row says
     // what (PRINCIPLES.md 10). A load or unload in progress keeps its step message.
@@ -761,10 +774,7 @@ function buildMessage(m: Model, th: Toolhead): ViewToolhead['message'] {
             if (un.toolhead !== thIdx || !un.connected) continue
             for (let si = 0; si < un.slots.length; si++) {
                 if (un.slots[si].state !== SlotState.ERROR) continue
-                return {
-                    text: cut(`${fmtUnitSpool(un.name, si)} ${str('STATUS_SPOOL_ERROR')}`, MESSAGE),
-                    tone: 'error',
-                }
+                return { text: fmtSpoolError(fmtUnitSpool(un.name, si, MESSAGE), MESSAGE), tone: 'error' }
             }
         }
     }
@@ -776,7 +786,7 @@ function buildMessage(m: Model, th: Toolhead): ViewToolhead['message'] {
               : th.loaded
                 ? 'STATUS_LOADED'
                 : 'STATUS_NO_FILAMENT'
-    return { text: cut(str(status), MESSAGE), tone: 'neutral' }
+    return { text: copy(str(status), MESSAGE), tone: 'neutral' }
 }
 
 function toolheadActions(m: Model, th: Toolhead): ViewAction[] {
@@ -788,6 +798,30 @@ function toolheadActions(m: Model, th: Toolhead): ViewAction[] {
     const stop = simple(list, m, 'stop', str('ACTION_STOP'), 'normal', `stop ${th.id}`)
     if (stop) confirm(stop, str('CONFIRM_STOP_TITLE'), str('CONFIRM_STOP_TEXT'), str('CONFIRM_STOP_OK'))
     return list.items
+}
+
+/** The display label of one H2 stage step name, in the current language; a
+ *  name newer than this list, or one that is already a sentence, shows as
+ *  itself (stage_label() in view.c). */
+function stageLabel(name: string): string {
+    switch (name) {
+        case 'heat':
+            return str('STEP_HEAT')
+        case 'cut':
+            return str('STEP_CUT')
+        case 'retract':
+            return str('STEP_RETRACT')
+        case 'feed':
+            return str('STEP_FEED')
+        case 'purge':
+            return str('STEP_PURGE')
+        case 'grab':
+            return str('STEP_GRAB')
+        case 'calibrate':
+            return str('STEP_CALIBRATE')
+        default:
+            return name
+    }
 }
 
 function buildToolhead(m: Model, index: number): ViewToolhead {
@@ -824,8 +858,8 @@ function buildToolhead(m: Model, index: number): ViewToolhead {
                   value: cjsonNumber(th.pressure),
                   set_point: cjsonNumber(th.setPoint),
                   label: str('LABEL_PRESSURE'),
-                  text: cut(fmtPressure(th.pressure), PRESSURE_TEXT),
-                  scale: [cut(fmtScale(0), SCALE), cut(fmtScale(th.setPoint), SCALE), cut(fmtScale(1), SCALE)],
+                  text: fmtPressure(th.pressure, PRESSURE_TEXT),
+                  scale: [fmtScale(0, SCALE), fmtScale(th.setPoint, SCALE), fmtScale(1, SCALE)],
               }
             : null
 
@@ -833,13 +867,13 @@ function buildToolhead(m: Model, index: number): ViewToolhead {
         id: cut(th.id, ID),
         // Toolhead = extruder: the title is the extruder's display name, the FPS id
         // (as configured) sits under it.
-        title: cut(th.extruder ? fmtExtruderTitle(th.extruder) : str('TOOLHEAD_DEFAULT_TITLE'), TITLE),
-        subtitle: cut(th.id, SUBTITLE),
+        title: th.extruder ? fmtExtruderTitle(th.extruder, TITLE) : copy(str('TOOLHEAD_DEFAULT_TITLE'), TITLE),
+        subtitle: th.id,
         tool,
         pressure,
         activity: {
             kind: activityKind,
-            steps: th.steps.slice(0, 8).map((s) => cut(s, STEP_LABEL)),
+            steps: th.steps.slice(0, 8).map(stageLabel),
             index: th.stepCurrent,
             failed: th.stepFailed,
         },
@@ -874,8 +908,14 @@ function buildSetting(m: Model, i: number): ViewSetting {
             value: false,
             action_on: null,
             action_off: null,
-            options: languages().map((l) => ({ code: l.code, label: l.label })),
-            selected: LANG_CODES.indexOf(language() as (typeof LANG_CODES)[number]),
+            // The pseudo-locale is for tests and layout review: available through
+            // setLanguage(), never in the list.
+            options: languages()
+                .filter((l) => l.code !== 'qps')
+                .map((l) => ({ code: l.code, label: l.label })),
+            selected: languages()
+                .filter((l) => l.code !== 'qps')
+                .findIndex((l) => l.code === language()),
         }
     }
     const toggle = (id: string, text: string, line: string): ViewAction => {

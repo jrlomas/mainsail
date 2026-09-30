@@ -7,7 +7,7 @@ const decoder = new TextDecoder()
 
 /** The bytes of the UTF-8 character that starts with `b` (1 for ASCII), 0 for
  *  a byte that cannot start one: the C writer's own rule. */
-const utf8Len = (b: number): number => {
+export const utf8Len = (b: number): number => {
     if (b < 0x80) return 1
     if ((b & 0xe0) === 0xc0) return 2
     if ((b & 0xf0) === 0xe0) return 3
