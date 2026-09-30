@@ -2156,7 +2156,7 @@ export const STR_ko: Partial<Record<StrId, string>> = {
     RUNOUT: '{tool} 소진, {spool}(으)로 전환 중',
     RUNOUT_ALONE: '{tool} 소진',
     RUNOUT_NO_SPARE: '{tool} 소진, 예비 스풀이 없습니다',
-    SHORTFALL: 'T{tool}에 {need} g이 필요하지만 스풀에는 {have} g만 있습니다',
+    SHORTFALL: 'T{tool}에 {need} g 필요, 스풀은 {have} g',
     MESSAGE_SPOOL_ERROR: '{spool}에서 오류가 발생했습니다',
     ALERT_LOW_FILAMENT: '필라멘트 부족: {spool}에 {g} g 남음',
     SPOOL_OPTION_FULL: '{vendor} {material} · {g} g',

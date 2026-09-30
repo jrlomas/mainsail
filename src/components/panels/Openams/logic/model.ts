@@ -13,7 +13,7 @@ import { cut, f32, i16, i8, toInt } from './cstr'
 // ----------------------------------------------------------------- limits
 
 export const MAX_UNITS = 6
-export const MAX_SLOTS_PER_UNIT = 8
+export const MAX_SLOTS_PER_UNIT = 12
 export const MAX_STEPS = 8
 export const MAX_ALERTS = 8
 export const MAX_GROUPS = 8
@@ -74,6 +74,7 @@ export interface Group {
 export interface Unit {
     name: string
     variant: number
+    title: string // the product name the host's family carries ("BoxTurtle"); '' = the variant's name
     connected: boolean
     hasHumidityPct: boolean
     hasTemp: boolean
@@ -252,6 +253,7 @@ function unitGetOrCreate(m: Model, name: string, minSlots: number): Unit | null 
         u = {
             name: cut(name, UNIT_NAME),
             variant: Variant.AMS,
+            title: '',
             connected: true,
             hasHumidityPct: false,
             hasTemp: false,
@@ -590,7 +592,44 @@ function mapHexColor(hex: string | null): number {
     return v
 }
 
+// The klipper-mmu families OpenAMS now sends, and the product name each one
+// carries. They are proper nouns, not sentences: they are never translated and
+// never reach the string tables. A klipper-mmu family only names the unit, so
+// the variant stays whatever it is (AMS by default) and every other behavior -
+// the tile kind, the dryer limits - is the variant's.
+const FAMILY_TITLES = new Map<string, string>([
+    ['boxturtle', 'BoxTurtle'],
+    ['nightowl', 'NightOwl'],
+    ['emu', 'EMU'],
+    ['kms', 'KMS'],
+    ['qidi_box', 'QIDI Box'],
+    ['angry_beaver', 'Angry Beaver'],
+    ['3ms', '3MS'],
+    ['quattrobox_1_0', 'QuattroBox 1.0'],
+    ['quattrobox_1_1', 'QuattroBox 1.1'],
+    ['quattrobox_2', 'QuattroBox 2'],
+    ['custom', 'Custom MMU'],
+    ['ercf_1_1', 'ERCF 1.1'],
+    ['ercf_2_0', 'ERCF 2.0'],
+    ['ercf_3_0', 'ERCF 3.0'],
+    ['tradrack', 'Tradrack'],
+    ['3d_chameleon', '3D Chameleon'],
+    ['htlf', 'HTLF'],
+    ['mmx6', 'MMX6'],
+    ['mmx', 'MMX'],
+    ['low_rider', 'Low Rider'],
+    ['pico_mmu', 'Pico MMU'],
+    ['btt_vivid', 'BTT ViViD'],
+    ['claymore', 'Claymore'],
+])
+
 function mapFamily(u: Unit, family: string | null): void {
+    // A projection is authoritative about the family's name: one that names no
+    // product (an AMS family, or one this build does not know) leaves no title
+    // behind, so the unit shows its variant's name as it did before.
+    u.title = (family !== null ? FAMILY_TITLES.get(family) : undefined) ?? ''
+    if (family === null) return
+
     switch (family) {
         case 'ams1':
             u.variant = Variant.AMS

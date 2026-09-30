@@ -488,6 +488,11 @@ const DRYER_TONE = (st: number): 'heat' | 'cool' | 'fault' | 'off' =>
 const VARIANT_NAMES = ['AMS', 'AMS 2 Pro', 'AMS HT', 'Lane MMU']
 const variantName = (v: number): string => VARIANT_NAMES[v] ?? 'AMS'
 
+// The one place a unit's title comes from: the product name the host's family
+// named the unit ("BoxTurtle"), or its variant's name when the family carries
+// none.
+const unitTitle = (u: Unit): string => u.title || variantName(u.variant)
+
 function buildUnit(m: Model, unitIdx: number): ViewUnit {
     const u = m.units[unitIdx]
 
@@ -512,7 +517,7 @@ function buildUnit(m: Model, unitIdx: number): ViewUnit {
 
     return {
         id: cut(u.name, UNIT_ID),
-        title: variantName(u.variant),
+        title: unitTitle(u),
         subtitle: cut(u.name, UNIT_ID),
         online: u.connected,
         status_text: u.connected ? '' : str('UNIT_OFFLINE'),
@@ -521,7 +526,7 @@ function buildUnit(m: Model, unitIdx: number): ViewUnit {
         alert: scanAlerts(m, unitIdx, -1),
         // serial and firmware: no real-host field carries these yet, so they are
         // left blank rather than invented.
-        info: { serial: '', firmware: '', family: variantName(u.variant) },
+        info: { serial: '', firmware: '', family: unitTitle(u) },
         actions: unitActions(m, unitIdx),
         bays: u.slots.map((_, bay) => buildTile(m, unitIdx, bay)),
     }
