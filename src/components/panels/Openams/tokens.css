@@ -36,9 +36,9 @@
     --oams-heat-text: color-mix(in srgb, #e0561a 60%, currentColor);
     --oams-warn: color-mix(in srgb, #c98a06 60%, currentColor);
     --oams-error: color-mix(in srgb, #d6334a 60%, currentColor);
-    --oams-accent: #2f7de1;
+    --oams-accent: #2072dc;
     --oams-ok: #1f9e67;
-    --oams-info: #2f7de1;
+    --oams-info: #2072dc;
     --oams-hatch-alpha: 14%;
     --oams-font-mono: ui-monospace, 'Roboto Mono', monospace;
 }
@@ -75,7 +75,7 @@
     --oams-text: #15171b;
     --oams-text-muted: #4b535c;
     --oams-text-faint: #5f656d;
-    --oams-accent: #2f7de1;
+    --oams-accent: #2072dc;
     --oams-heat-bg: #ffe8dc;
     --oams-heat-text: #ab4e1d;
     --oams-pill-bg: rgba(0, 0, 0, 0.05);
@@ -83,7 +83,7 @@
     --oams-warn: #855b04;
     --oams-error: #9c2537;
     --oams-ok: #1f9e67;
-    --oams-info: #2f7de1;
+    --oams-info: #2072dc;
     --oams-hatch-alpha: 13%;
     --oams-font-ui: 'Geist', ui-sans-serif, system-ui, sans-serif;
     --oams-font-mono: 'IBM Plex Mono', ui-monospace, 'Roboto Mono', monospace;
