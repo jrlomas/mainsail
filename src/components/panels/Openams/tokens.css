@@ -22,7 +22,6 @@
     --oams-fs-value-mono: 22px;
     --oams-fw-value-mono: 400;
     --oams-ink-threshold: 160;
-    --oams-$comment: The host theme (UNIFIED_UI 6): the card is the host's, so surfaces and text tints are foreground alphas over it. The status colors are mixed with the foreground, so they read on a dark and on a light card; a host that sets its own (Mainsail's Vuetify palette) overrides them. Contrast checked at 4.5:1 on both cards (web/vue/tests/a11y.spec.ts).;
     --oams-bg: transparent;
     --oams-surface-1: transparent;
     --oams-surface-2: color-mix(in srgb, currentColor 5%, transparent);
