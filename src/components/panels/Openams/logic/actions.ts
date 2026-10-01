@@ -14,6 +14,10 @@ import {
     editDefaults,
     editVendorCount,
     editVendorName,
+    GROUP_CHOICE_NEW,
+    GROUP_CHOICE_NONE,
+    groupEditReason,
+    groupNextName,
     MATERIALS,
     SlotState,
     slotGroup,
@@ -96,6 +100,9 @@ function slotFind(m: Model, id: string): { unit: number; slot: number } | null {
 }
 
 const unitFind = (m: Model, name: string): number => m.units.findIndex((u) => u.name === name)
+
+/** The group index named `name`, or -1. */
+const groupFind = (m: Model, name: string): number => m.groups.findIndex((g) => g.name === name)
 
 /** The FPS lane the host gave `unit`, or null. */
 const unitLane = (m: Model, unit: number): string | null => m.units[unit]?.lane || null
@@ -325,6 +332,67 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
         const name = new Scanner(arg).word(31)
         if (name === null) return NOT_MINE
         w.cmd(`OAMSM_CREATE_GROUP GROUP=${name}`)
+        return { rc: 1, script: '' }
+    }
+
+    // `delete group <name>`: the groups list's own action. The name has to be a
+    // group the model holds, and the host refuses to delete one its lane is
+    // using - so it is the same predicate the view dims the action by.
+    arg = rest(line, 'delete group') ?? rest(line, 'group delete')
+    if (arg !== null) {
+        const name = new Scanner(arg).word(31)
+        if (name === null) return NOT_MINE
+        const gi = groupFind(m, name)
+        if (gi < 0) return NOT_MINE
+        const whyGroup = groupEditReason(m, gi)
+        if (whyGroup) return refuse(whyGroup)
+        w.cmd(`OAMSM_DELETE_GROUP GROUP=${name}`)
+        return { rc: 1, script: '' }
+    }
+
+    // `change group <choice> <slot>`: the display's "Change group..." form
+    // submits. The choice is an index into the group's own table, or one of the
+    // two sentinels the view writes for the other two rows of the list, so the
+    // line stays short and the mapper is the one that knows what the host calls
+    // each command.
+    arg = rest(line, 'change group')
+    if (arg !== null) {
+        const s = new Scanner(arg)
+        const choice = s.int()
+        const id = choice === null ? null : s.word(31)
+        if (choice === null || id === null) return NOT_MINE
+        const found = slotFind(m, id)
+        if (!found) return NOT_MINE
+        const gi = slotGroup(m, found.unit, found.slot)
+        const oams = m.units[found.unit].name
+
+        // The lane's own rules stop every change first, whatever the choice: a
+        // load/unload or a runout in progress, or the bay's group being the one
+        // the lane is running.
+        const whyDonor = groupEditReason(m, gi)
+        if (whyDonor) return refuse(whyDonor)
+
+        if (choice === GROUP_CHOICE_NONE) {
+            if (gi < 0) return refuse(str('REASON_NOT_GROUPED'))
+            w.cmd(`OAMSM_UNASSIGN_BAY GROUP=${m.groups[gi].name} OAMS=${oams} BAY=${found.slot}`)
+            return { rc: 1, script: '' }
+        }
+        if (choice === GROUP_CHOICE_NEW) {
+            // A new group and the bay that fills it, in one script: the host takes
+            // them in order, so the bay is never in a group that does not exist.
+            const name = groupNextName(m)
+            w.cmd(`OAMSM_CREATE_GROUP GROUP=${name}`)
+            w.cmd(`OAMSM_ASSIGN_BAY GROUP=${name} OAMS=${oams} BAY=${found.slot}`)
+            return { rc: 1, script: '' }
+        }
+        if (choice < 0 || choice >= m.groups.length) return NOT_MINE
+        // And the destination: changing the loaded group's membership would change
+        // what the lane loads next.
+        if (choice !== gi) {
+            const whyGroup = groupEditReason(m, choice)
+            if (whyGroup) return refuse(whyGroup)
+        }
+        w.cmd(`OAMSM_ASSIGN_BAY GROUP=${m.groups[choice].name} OAMS=${oams} BAY=${found.slot}`)
         return { rc: 1, script: '' }
     }
 

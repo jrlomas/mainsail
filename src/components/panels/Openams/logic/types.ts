@@ -116,6 +116,46 @@ export interface ViewUnit {
     info: { serial: string; firmware: string; family: string } | null
     actions: ViewAction[]
     bays: ViewTile[]
+    /** Every group that holds one of this unit's bays, in order. */
+    groups: ViewGroup[]
+    /** This unit's bays that belong to no group, in bay order. */
+    ungrouped_bays: ViewGroupMember[]
+}
+
+/** One bay of a group, as the groups list shows it. A bay of the unit the list
+ *  is scoped to is named the way its own tile is ("Spool N") and carries its
+ *  color, material and state; a bay of another unit is a backup that unit may
+ *  fall back to, never something to manage from here, so it is named with its
+ *  unit and dimmed, and still carries its color, material and state, which say
+ *  whether the fallback would match and is ready (docs/GROUPS.md). */
+export interface ViewGroupMember {
+    slot_id: string
+    /** The bay's index in its own unit, so a renderer finds its tile. */
+    bay: number
+    mine: boolean
+    dim: boolean
+    /** The one infinite spooling would load next. */
+    spare: boolean
+    /** "Spool N", or "oams2 Spool N" for another unit's. */
+    label: string
+    color: string | null
+    material: string
+    brand: string
+    /** Loaded / Ready / Empty / Error. */
+    state: string
+    state_tone: Tone
+}
+
+export interface ViewGroup {
+    /** "T0": the tool the slicer loads by name. */
+    name: string
+    /** Its membership may change now. */
+    editable: boolean
+    /** "" when editable, else why not. */
+    reason: string
+    members: ViewGroupMember[]
+    /** The group's own actions ("Delete group"), dimmed with `reason`. */
+    actions: ViewAction[]
 }
 
 export interface ViewToolhead {
@@ -207,6 +247,10 @@ export interface ViewLabels {
     no_response: string
     /** "Could not save the spool:": the lead of a host's refusal of an edit, which ends in its own colon; a renderer adds the host's words after a space. */
     edit_failed: string
+    /** The head of a unit's filament groups section. */
+    groups: string
+    /** The row of the bays that belong to no group. */
+    no_group: string
 }
 
 export interface View {

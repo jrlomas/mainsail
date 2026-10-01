@@ -9,6 +9,7 @@
 // this code keeps it on purpose, and says so.
 
 import { cut, f32, i16, i8, toInt } from './cstr'
+import { str } from './strings'
 
 // ----------------------------------------------------------------- limits
 
@@ -18,6 +19,13 @@ export const MAX_STEPS = 8
 export const MAX_ALERTS = 8
 export const MAX_GROUPS = 8
 export const MAX_GROUP_MEMBERS = 8
+
+/** The two choices of the "Change group..." list that are not a group: the
+ *  values the view writes for "No group" and "New group" (MMU_GROUP_CHOICE_*
+ *  in src/model/mmu_model.h). Every other choice of that list is the index of
+ *  a group in Model.groups. */
+export const GROUP_CHOICE_NONE = -1
+export const GROUP_CHOICE_NEW = -2
 export const MAX_SPOOLS = 16
 export const MAX_VENDORS = 64 // MMU_MAX_VENDORS: Spoolman's own plus the curated brands
 const VENDOR_LEN = 32
@@ -240,6 +248,10 @@ export interface Model {
     actionPendingSeq: number
     busy: number
     busyUnit: number
+    /** The rest of that mirror, as far as the group-edit rules read it: the
+     *  group the lane loaded, and a runout in progress. */
+    currentGroup: number
+    runoutActive: boolean
     /** Always false on the web: only the display's demo scenarios set it. */
     printing: boolean
     /** Alert history, newest first, at most MAX_ALERTS. */
@@ -307,6 +319,8 @@ export function newModel(): Model {
         busy: Busy.NONE,
         busyUnit: -1,
         printing: false,
+        currentGroup: -1,
+        runoutActive: false,
         alerts: [],
         pending: [],
         jobNeedG: new Array<number>(MAX_TOOLS).fill(0),
@@ -469,6 +483,52 @@ export function groupNextSpare(m: Model, group: number): { unit: number; slot: n
     return null
 }
 
+/** False while a load/unload or a runout is in progress, or while `group` is
+ *  the one loaded on its lane (mmu_group_editable_in). */
+export function groupEditable(m: Model, group: number): boolean {
+    if (group < 0 || group >= m.groups.length) return true
+    if (m.busy !== Busy.NONE) return false
+    if (m.runoutActive) return false
+    if (m.loaded && group === m.currentGroup) return false
+    return true
+}
+
+/** "" while the group's membership may change now, else the one refusal that
+ *  stops it (docs/GROUPS.md); one string per rule, as mmu_group_edit_reason.
+ *  The first two rules are the lane's, so they answer for a group of -1 too -
+ *  a bay in no group is still refused while the lane is busy. */
+export function groupEditReason(m: Model, group: number): string {
+    if (m.busy !== Busy.NONE) return str('REASON_GROUP_BUSY')
+    if (m.runoutActive) return str('REASON_GROUP_RUNOUT')
+    if (group < 0 || group >= m.groups.length) return ''
+    if (m.loaded && group === m.currentGroup) return str('REASON_GROUP_LOADED')
+    return ''
+}
+
+/** The next free "T<n>" a new group takes (mmu_group_next_name): the lowest
+ *  index whose name no group holds. */
+export function groupNextName(m: Model): string {
+    for (let i = 0; i <= MAX_GROUPS; i++) {
+        const cand = `T${i}`
+        if (!m.groups.some((g) => g.name === cand)) return cand
+    }
+    return `T${MAX_GROUPS}`
+}
+
+/** True when `group` may hold a bay of `unitIdx`'s lane
+ *  (mmu_group_on_unit_lane): one of its members is on a unit of the same FPS
+ *  lane, or it is empty - a group with no bay is on no lane at all. A unit
+ *  whose lane the host has not reported belongs to no lane, and then every
+ *  group may. */
+export function groupOnUnitLane(m: Model, unitIdx: number, group: number): boolean {
+    const th = m.units[unitIdx]?.toolhead
+    if (th === undefined || th < 0 || th >= m.toolheads.length) return true
+    if (group < 0 || group >= m.groups.length) return false
+    const g = m.groups[group]
+    if (g.members.length === 0) return true
+    return g.members.some((mem) => m.units[mem.unit]?.toolhead === th)
+}
+
 /** The job shortfall of tool `toolIndex`, or null: the group "T<n>", summed
  *  remaining grams over the members that report one, ignoring a group whose
  *  members are all unknown. */
@@ -570,6 +630,8 @@ export function refreshThis(m: Model): void {
     m.loaded = th.loaded
     m.busy = th.busy
     m.busyUnit = th.busyUnit
+    m.currentGroup = th.currentGroup
+    m.runoutActive = th.runoutActive
 }
 
 // ---------------------------------------------------------- JSON accessors

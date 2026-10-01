@@ -22,7 +22,11 @@ import {
     editDefaults,
     editVendorCount,
     editVendorName,
+    GROUP_CHOICE_NEW,
+    GROUP_CHOICE_NONE,
+    groupEditReason,
     groupNextSpare,
+    groupOnUnitLane,
     slotGroup,
     slotId,
     toolShortfall,
@@ -62,6 +66,8 @@ import type {
     ViewField,
     ViewAlert,
     ViewAlertGroup,
+    ViewGroup,
+    ViewGroupMember,
     ViewSetting,
     ViewTile,
     ViewToolhead,
@@ -97,10 +103,10 @@ const ACTION_ID = 20
 const ACTION_LINE = 128
 const OPTION_LABEL = 72
 
-const MAX_ACTIONS = 9
+const MAX_ACTIONS = 10 // VIEW_ACTIONS_MAX in src/view/view.h
 const MAX_ACTIONS_PER_ALERT = 2
 const MAX_ALERTS_PER_GROUP = 6
-const MAX_OPTIONS = 104 // every select of one action list shares the pool, as in C
+const MAX_OPTIONS = 120 // every select of one action list shares the pool, as in C
 const MAX_ALERTS = 8
 const MAX_PENDING_SPOOLS = 8
 const MAX_UNASSIGNED = 6
@@ -494,6 +500,72 @@ function addEditAction(list: ActionList, m: Model, unitIdx: number, bay: number,
     )
 }
 
+/** The choice the form opens on: the bay's own group, so submitting it
+ *  unchanged moves nothing. A bay in no group has none to name, and "No group"
+ *  is the one choice the mapper refuses on it - there is nothing to unassign -
+ *  so it takes the first group of its lane that is not the one loaded in the
+ *  toolhead, or "New group" when the lane holds none. "No group" and the loaded
+ *  group stay in the list: a user who picks them hears the host's own refusal. */
+function groupDefaultChoice(m: Model, unitIdx: number, bay: number): number {
+    const gi = slotGroup(m, unitIdx, bay)
+    if (gi >= 0) return gi
+    for (let g = 0; g < m.groups.length; g++) {
+        if (!groupOnUnitLane(m, unitIdx, g)) continue
+        if (m.loaded && g === m.currentGroup) continue
+        return g
+    }
+    return GROUP_CHOICE_NEW
+}
+
+/** The "Change group..." list of a bay: every group on this unit's lane, by
+ *  name, then "No group" and "New group" (the next free "T<n>"). The default is
+ *  the bay's own group, so opening the form and submitting it unchanged moves
+ *  nothing. The line carries the choice as its value, and the mapper turns each
+ *  choice into the host command(s) it means. */
+function addChangeGroupAction(list: ActionList, m: Model, unitIdx: number, bay: number, id: string): void {
+    const choice = groupDefaultChoice(m, unitIdx, bay)
+    const options: { value: number; label: string }[] = []
+    for (let g = 0; g < m.groups.length; g++) {
+        if (!groupOnUnitLane(m, unitIdx, g)) continue
+        options.push({ value: g, label: copy(m.groups[g].name, OPTION_LABEL) })
+    }
+    options.push({ value: GROUP_CHOICE_NONE, label: str('MAP_NO_GROUP') })
+    options.push({ value: GROUP_CHOICE_NEW, label: str('GP_NEW') })
+
+    const a = list.add('change_group', str('HS_CHANGE_GROUP'), cut(`change group {group} ${id}`, ACTION_LINE), 'normal')
+    if (!a) return
+    a.form = {
+        fields: [
+            {
+                id: 'group',
+                label: str('FIELD_GROUP_LABEL'),
+                kind: 'select',
+                value: cjsonNumber(choice),
+                min: 0,
+                max: 0,
+                step: 0,
+                unit: '',
+                options,
+            },
+        ],
+        submit_label: str('ACTION_CHANGE_GROUP'),
+        require_change: true,
+    }
+    // Dry-run the line the form opens on, not the bay's own group alone: the
+    // destination has rules of its own (the group loaded in the toolhead), so
+    // this is what the one predicate says about the change as it stands - one
+    // string per refusal rule, dimmed and never hidden (PRINCIPLES.md 1).
+    check(a, cut(`change group ${choice} ${id}`, ACTION_LINE), m)
+}
+
+/** The group's own actions: the "Delete group", dimmed with the group's own
+ *  reason when the host would refuse it. */
+function groupActions(m: Model, gi: number): ViewAction[] {
+    const list = new ActionList()
+    simple(list, m, 'delete_group', str('ACTION_DELETE_GROUP'), 'danger', `delete group ${m.groups[gi].name}`)
+    return list.items
+}
+
 /** The tile's actions, a fixed set in a fixed order; enabled and reason come
  *  from the one predicate, which dims what does not apply now. */
 function tileActions(m: Model, unitIdx: number, bay: number): ViewAction[] {
@@ -552,6 +624,7 @@ function tileActions(m: Model, unitIdx: number, bay: number): ViewAction[] {
     }
 
     simple(list, m, 'unlink', str('ACTION_UNLINK'), 'normal', `unlink ${id}`)
+    addChangeGroupAction(list, m, unitIdx, bay, id)
     // A unit with no reader can never re-read a tag: no such action.
     if (u.rfid) simple(list, m, 'reread', str('ACTION_REREAD'), 'normal', `reread ${id}`)
     const cal = simple(list, m, 'calibrate', str('ACTION_CALIBRATE'), 'normal', `calibrate ${id}`)
@@ -688,7 +761,104 @@ function buildUnit(m: Model, unitIdx: number): ViewUnit {
         info: { serial: '', firmware: '', family: unitTitle(u) },
         actions: unitActions(m, unitIdx),
         bays: u.slots.map((_, bay) => buildTile(m, unitIdx, bay)),
+        groups: buildGroups(m, unitIdx),
+        ungrouped_bays: ungroupedBays(m, unitIdx),
     }
+}
+
+// ------------------------------------------------------------------ groups
+
+/** The groups that hold a bay of `unitIdx`, in the model's own order. */
+function groupsForUnit(m: Model, unitIdx: number): number[] {
+    const out: number[] = []
+    for (let g = 0; g < m.groups.length; g++) {
+        if (m.groups[g].members.some((mem) => mem.unit === unitIdx)) out.push(g)
+    }
+    return out
+}
+
+/** One member row: this unit's bay named like its tile and carrying its color,
+ *  material and state, another unit's named with its unit and dimmed with no
+ *  state - a backup this unit may fall back to, never a thing to manage here. */
+function buildGroupMember(m: Model, unitIdx: number, unit: number, slot: number, spare: boolean): ViewGroupMember {
+    const mine = unit === unitIdx
+    const empty: ViewGroupMember = {
+        slot_id: '',
+        bay: slot,
+        mine,
+        dim: !mine,
+        spare,
+        label: '',
+        color: null,
+        material: '',
+        brand: '',
+        state: '',
+        state_tone: 'neutral',
+    }
+    const u = m.units[unit]
+    if (!u || slot < 0 || slot >= u.slots.length) return empty
+
+    empty.slot_id = slotId(m, unit, slot)
+    empty.label = mine ? fmtSpoolLabel(slot, SUBLABEL) : fmtUnitSpool(u.name, slot, SUBLABEL)
+    const tile = buildTile(m, unit, slot)
+    empty.color = tile.color
+
+    empty.material = copy(tile.material, MATERIAL)
+    empty.brand = copy(tile.brand, MATERIAL)
+    switch (tile.state) {
+        case 'loaded':
+            empty.state = str('GROUP_LOADED')
+            empty.state_tone = 'neutral'
+            break
+        case 'error':
+            empty.state = str('GROUP_ERROR')
+            empty.state_tone = 'error'
+            break
+        case 'empty':
+            empty.state = str('GROUP_EMPTY')
+            empty.state_tone = 'neutral'
+            break
+        default:
+            empty.state = str('GROUP_READY')
+            empty.state_tone = 'neutral'
+            break
+    }
+    return empty
+}
+
+function buildGroups(m: Model, unitIdx: number): ViewGroup[] {
+    return groupsForUnit(m, unitIdx).map((gi) => {
+        const g = m.groups[gi]
+        const spare = groupNextSpare(m, gi)
+        const reason = groupEditReason(m, gi)
+        return {
+            name: copy(g.name, LABEL),
+            editable: !reason,
+            reason,
+            members: g.members.map((mem) =>
+                buildGroupMember(
+                    m,
+                    unitIdx,
+                    mem.unit,
+                    mem.slot,
+                    !!spare && spare.unit === mem.unit && spare.slot === mem.slot
+                )
+            ),
+            actions: groupActions(m, gi),
+        }
+    })
+}
+
+/** This unit's bays that belong to no group, in bay order. */
+function ungroupedBays(m: Model, unitIdx: number): ViewGroupMember[] {
+    const u = m.units[unitIdx]
+    const out: ViewGroupMember[] = []
+    if (!u) return out
+    for (let bay = 0; bay < u.slots.length; bay++) {
+        if (slotGroup(m, unitIdx, bay) >= 0) continue
+        out.push(buildGroupMember(m, unitIdx, unitIdx, bay, false))
+    }
+    return out
 }
 
 // ------------------------------------------------------------------ alerts
@@ -1161,6 +1331,8 @@ export function buildView(m: Model): View {
             cancel: str('LABEL_CANCEL'),
             no_response: str('LABEL_NO_RESPONSE'),
             edit_failed: str('LABEL_EDIT_FAILED'),
+            groups: str('SCREEN_GROUPS'),
+            no_group: str('MAP_NO_GROUP'),
         },
         spoolman: { online: m.spoolmanOnline, pending },
         settings: SETTING_KEYS.map((_, i) => buildSetting(m, i)),
