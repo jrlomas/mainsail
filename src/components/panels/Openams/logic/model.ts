@@ -64,6 +64,8 @@ export interface Slot {
     spoolId: number // Spoolman id, -1 = none
     pendingConfirmation: boolean
     remainingG: number // -1 = unknown
+    initialG: number // `spool.initial_g`, the spool's own size in grams; -1 = unknown
+    flowKX1000: number // `spool.flow_k`, the spool's own pressure advance; -1 = unknown, else PA * 1000
     calState: number
     positioning: boolean // the firmware is positioning a new spool
     globalId: number // `bays[i].id`, the host's own bay id; -1 = unknown
@@ -206,6 +208,8 @@ function slotClear(): Slot {
         spoolId: -1,
         pendingConfirmation: false,
         remainingG: -1,
+        initialG: -1,
+        flowKX1000: -1,
         calState: CalState.UNKNOWN,
         positioning: false,
         globalId: -1,
@@ -520,6 +524,18 @@ function jint(obj: unknown, key: string): number | null {
     if (!isObject(obj)) return null
     const v = obj[key]
     return typeof v === 'number' ? toInt(v) : null
+}
+
+/** The number value of `key` as whole thousandths, the unit the edit form
+ *  works in (jmilli in C, which rounds the fourth decimal the same way), or
+ *  null when it is not a number. The value itself is not first cut to an int,
+ *  which would take every advance below 1.000 to nothing. */
+function jmilli(obj: unknown, key: string): number | null {
+    if (!isObject(obj)) return null
+    const v = obj[key]
+    if (typeof v !== 'number') return null
+    const m = v * 1000
+    return toInt(m >= 0 ? m + 0.5 : m - 0.5)
 }
 
 const jfield = (obj: unknown, key: string): unknown => (isObject(obj) ? obj[key] : undefined)
@@ -983,6 +999,19 @@ export function applyComponentStatus(m: Model, obj: unknown): boolean {
             s.colorKnown = color !== null
             const grams = jint(spool, 'remaining_g')
             if (grams !== null) s.remainingG = i16(grams)
+            // the spool's own size and pressure advance, when the host sends them; a
+            // missing, null or non-number one is unknown, as it is for every other
+            // field of the summary
+            // only values the contract allows (a positive weight that fits the
+            // model, a pressure advance of 0-2): anything else stays unknown rather
+            // than wrapping into a wrong default (status_map.c)
+            s.initialG = -1
+            s.flowKX1000 = -1
+            const initial = jint(spool, 'initial_g')
+            if (initial !== null && initial >= 1 && initial <= 32767) s.initialG = initial
+            const rawFlow = isObject(spool) ? spool['flow_k'] : undefined
+            const flow = jmilli(spool, 'flow_k')
+            if (flow !== null && typeof rawFlow === 'number' && rawFlow >= 0 && rawFlow <= 2) s.flowKX1000 = flow
             const pct = jint(spool, 'remaining_pct')
             if (pct !== null) {
                 const old = s.remainingPct
@@ -1012,6 +1041,8 @@ export function applyComponentStatus(m: Model, obj: unknown): boolean {
             s.brand = ''
             s.remainingPct = -1
             s.remainingG = -1
+            s.initialG = -1
+            s.flowKX1000 = -1
         }
     }
     refreshThis(m)
@@ -1196,14 +1227,19 @@ export function editDefaults(m: Model, unitIdx: number, slotIdx: number): EditDe
         }
     }
 
-    // the host reports grams left and percent left, so the spool's size is read
-    // back from the two; a spool that never said keeps Spoolman's 1000
-    if (s.remainingG >= 0 && s.remainingPct > 0) {
+    // the host reports the spool's own size when it sends one; without it the
+    // size is read back from the grams and the percent left, and a spool that
+    // never said either keeps Spoolman's 1000
+    if (s.initialG >= 1) d.initialG = s.initialG
+    else if (s.remainingG >= 0 && s.remainingPct > 0) {
         const v = Math.trunc((s.remainingG * 100 + Math.trunc(s.remainingPct / 2)) / s.remainingPct)
         if (v >= 1) d.initialG = v
     }
     if (s.remainingG > d.initialG) d.initialG = s.remainingG
     d.remainingG = s.remainingG >= 0 ? s.remainingG : d.initialG
+
+    // the spool's own pressure advance when the host sends one, else Spoolman's 0.020
+    if (s.flowKX1000 >= 0) d.paX1000 = s.flowKX1000
     return d
 }
 
