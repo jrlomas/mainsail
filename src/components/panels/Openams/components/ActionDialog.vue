@@ -11,7 +11,7 @@
             <p v-if="dialog.mode === 'confirm'" class="dlg-text">{{ text }}</p>
             <template v-else>
                 <div v-for="field in fields" :key="field.id" class="dlg-field">
-                    <label :for="fieldId(field)">
+                    <label :id="labelId(field)" :for="fieldId(field)">
                         {{ field.label }}
                         <span v-if="field.unit" class="dlg-unit">{{ field.unit }}</span>
                     </label>
@@ -22,16 +22,15 @@
                         :data-field="field.id"
                         :checked="checked(field)"
                         @change="onToggle(field, $event)" />
-                    <select
+                    <select-field
                         v-else-if="field.kind === 'select'"
                         :id="fieldId(field)"
-                        :data-field="field.id"
+                        :labelled-by="labelId(field)"
+                        :field="field.id"
+                        :options="field.options ?? []"
                         :value="value(field)"
-                        @change="onSelect(field, $event)">
-                        <option v-for="option in field.options" :key="option.value" :value="option.value">
-                            {{ option.label }}
-                        </option>
-                    </select>
+                        :swatches="field.id === 'color'"
+                        @input="onSelect(field, $event)" />
                     <input
                         v-else
                         :id="fieldId(field)"
@@ -46,7 +45,12 @@
             </template>
             <div class="dlg-actions">
                 <button type="button" class="dlg-btn" data-role="cancel" @click="dismiss">{{ cancelLabel }}</button>
-                <button type="button" class="dlg-btn primary" :data-action="dialog.action.id" @click="ok">
+                <button
+                    type="button"
+                    class="dlg-btn primary"
+                    :data-action="dialog.action.id"
+                    :disabled="submitOff"
+                    @click="ok">
                     {{ submitLabel }}
                 </button>
             </div>
@@ -57,7 +61,8 @@
 <script lang="ts">
 import { Component, Inject, Prop, Vue, Watch } from 'vue-property-decorator'
 import type { ViewField, ViewLabels } from '../logic/index'
-import { INTERACT, type Interactivity } from '../interact'
+import { INTERACT, changed, formExtras, type Interactivity } from '../interact'
+import SelectField from './SelectField.vue'
 
 let seq = 0
 
@@ -65,7 +70,7 @@ let seq = 0
  *  showModal(), in the top layer, with focus trapping and Escape for free). A
  *  form is where the task happens (principle 11); a confirm is shown verbatim
  *  before the action resolves, and only for a drastic one (principle 7). */
-@Component
+@Component({ components: { SelectField } })
 export default class ActionDialog extends Vue {
     @Prop({ default: null }) readonly labels!: ViewLabels | null
     @Inject(INTERACT) readonly ctrl!: Interactivity
@@ -91,11 +96,25 @@ export default class ActionDialog extends Vue {
         return this.dialog?.action.confirm?.text ?? ''
     }
 
-    /** Buttons are verbs: the action's own label, or the confirmation's. */
+    /** Buttons are verbs: the action's own label, or the confirmation's, or the
+     *  form's own when the core names one ("Save changes", not "Edit spool"
+     *  again). */
     get submitLabel(): string {
         const d = this.dialog
         if (!d) return ''
-        return d.mode === 'confirm' ? (d.action.confirm?.ok_label ?? d.action.label) : d.action.label
+        if (d.mode === 'confirm') return d.action.confirm?.ok_label ?? d.action.label
+        return formExtras(d.action.form).submit_label || d.action.label
+    }
+
+    /** A form that asks for a change is not worth sending without one: the
+     *  button stays dead until a field differs from the value it opened with,
+     *  and goes dead again when it is put back. A form the core does not ask
+     *  that of is always live, as it was. */
+    get submitOff(): boolean {
+        const d = this.dialog
+        const form = d?.mode === 'form' ? d.action.form : null
+        if (!form || !formExtras(form).require_change) return false
+        return !changed(form, d!.values)
     }
 
     get cancelLabel(): string {
@@ -104,6 +123,12 @@ export default class ActionDialog extends Vue {
 
     fieldId(field: ViewField): string {
         return `${this.headId}-${field.id}`
+    }
+
+    /** The label names the control, and the control's popup names itself from
+     *  the same label, so a reader hears "Color" on both. */
+    labelId(field: ViewField): string {
+        return `${this.fieldId(field)}-label`
     }
 
     /** A number or a select's option value, as the input wants it. */
@@ -124,8 +149,9 @@ export default class ActionDialog extends Vue {
         this.set(field, (event.target as HTMLInputElement).checked)
     }
 
-    onSelect(field: ViewField, event: Event): void {
-        this.set(field, Number((event.target as HTMLSelectElement).value))
+    /** A list's own choice: the option's value, as the field declares it. */
+    onSelect(field: ViewField, option: number): void {
+        this.set(field, Number(option))
     }
 
     onNumber(field: ViewField, event: Event): void {
@@ -207,8 +233,7 @@ export default class ActionDialog extends Vue {
         gap: 6px;
     }
 
-    input[type='number'],
-    select {
+    input[type='number'] {
         width: 128px;
         min-height: 32px;
         padding: 4px 8px;
@@ -260,6 +285,13 @@ export default class ActionDialog extends Vue {
         background: var(--oams-accent);
         border-color: transparent;
         color: #fff;
+    }
+
+    /* A button with nothing to send is dimmed rather than hidden, so the form
+       keeps its shape (principles 1, 8). */
+    &:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
     }
 }
 </style>

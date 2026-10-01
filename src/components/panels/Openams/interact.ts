@@ -44,10 +44,31 @@ export interface DialogState {
 /** A form's opening values, taken from the core's own defaults. A value keeps
  *  the kind its field declares, so a select's value is still a number when it
  *  goes back to the logic. */
-function defaults(form: ViewForm): FormValues {
+export function defaults(form: ViewForm): FormValues {
     const values: FormValues = {}
     for (const field of form.fields) values[field.id] = field.kind === 'toggle' ? !!field.value : field.value
     return values
+}
+
+/** What a form's own submit button says, and whether it stays dead until a
+ *  field differs from the one the form opened with. Both are the core's, and
+ *  both are read through this shape so a panel built against a core that has
+ *  not got them yet still compiles and picks them up unchanged when it does. */
+export interface FormExtras {
+    submit_label?: string
+    require_change?: boolean
+}
+
+/** The two fields, or nothing at all: a core that writes neither leaves the
+ *  button as it was, on the action's own label and always live. */
+export function formExtras(form: ViewForm | null | undefined): FormExtras {
+    return (form ?? {}) as ViewForm & FormExtras
+}
+
+/** True once a field holds something other than what it opened with. */
+export function changed(form: ViewForm, values: FormValues): boolean {
+    const start = defaults(form)
+    return Object.keys(start).some((id) => values[id] !== start[id])
 }
 
 /** Resolves an action line; the panel's own, so the logic stays the only
