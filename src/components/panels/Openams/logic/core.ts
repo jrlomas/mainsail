@@ -21,6 +21,7 @@ import {
     applyPrintStats,
     applySettings,
     applySpoolList,
+    applyVendorList,
     drain,
     MAX_UNITS,
     newModel,
@@ -32,7 +33,7 @@ import { buildView } from './view'
 import type { ActionResult, Core, ObjectKind, View } from './types'
 
 /** One openams_ui copy per unit, plus one each for the singleton kinds. */
-const MAX_ENTRIES = MAX_UNITS + 6
+const MAX_ENTRIES = MAX_UNITS + 7
 const KIND_LEN = 16
 const NAME_LEN = 24
 
@@ -96,14 +97,15 @@ export class OpenamsLogic implements Core {
     private applyJson(kind: string, name: string, obj: unknown): boolean {
         const m = this.model
 
-        // spool_list and metadata are whole results, so the owned copy is replaced.
-        if (kind === 'spool_list' || kind === 'metadata') {
-            if (kind === 'spool_list' ? !Array.isArray(obj) : !isObject(obj)) return false
+        // spool_list, vendor_list and metadata are whole results, so the owned copy is replaced.
+        if (kind === 'spool_list' || kind === 'vendor_list' || kind === 'metadata') {
+            if (kind === 'metadata' ? !isObject(obj) : !Array.isArray(obj)) return false
             const e = this.entry(kind, name)
             if (!e) return false
             const changed = !(e.copy !== null && jsonEqual(e.copy, obj))
             e.copy = obj
             if (kind === 'spool_list') applySpoolList(m, obj)
+            else if (kind === 'vendor_list') applyVendorList(m, obj)
             else applyMetadata(m, obj)
             refreshThis(m)
             return changed

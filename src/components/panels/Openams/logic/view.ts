@@ -18,6 +18,10 @@ import {
     Sev,
     Variant,
     MAX_TOOLS,
+    MATERIALS,
+    editDefaults,
+    editVendorCount,
+    editVendorName,
     groupNextSpare,
     slotGroup,
     slotId,
@@ -55,6 +59,7 @@ import type {
     Tone,
     View,
     ViewAction,
+    ViewField,
     ViewAlert,
     ViewAlertGroup,
     ViewSetting,
@@ -89,13 +94,13 @@ const SPOOL_NAME = 64 // the {spool} of a low-filament sentence
 const RUNOUT_TARGET = LABEL * 3
 const SETTING_KEY = 32
 const ACTION_ID = 20
-const ACTION_LINE = 56
+const ACTION_LINE = 128
 const OPTION_LABEL = 72
 
-const MAX_ACTIONS = 8
+const MAX_ACTIONS = 9
 const MAX_ACTIONS_PER_ALERT = 2
 const MAX_ALERTS_PER_GROUP = 6
-const MAX_OPTIONS = 16
+const MAX_OPTIONS = 56 // every select of one action list shares the pool, as in C
 const MAX_ALERTS = 8
 const MAX_PENDING_SPOOLS = 8
 const MAX_UNASSIGNED = 6
@@ -305,8 +310,10 @@ function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
     // real spool (black, unknown, error, ...) is never hatched.
     const hatched = state === 'empty' || !u.connected
 
-    const ink = inkFor(s.color)
-    const [top, bottom] = gradientFor(s.color, ink)
+    // No known color: no color, no gradient, and the ink of the neutral surface the
+    // renderer draws instead (PRINCIPLES 1). A known 0x000000 is black.
+    const ink = s.colorKnown ? inkFor(s.color) : 'light'
+    const gradient = s.colorKnown ? gradientFor(s.color, ink) : null
 
     // "name" has no field of its own yet: it mirrors the material. An unknown
     // one is "": only the ring shows "?".
@@ -321,10 +328,10 @@ function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
         spare,
         state,
         tag,
-        color: hex(s.color),
+        color: s.colorKnown ? hex(s.color) : null,
         ink,
-        gradient_top: hex(top),
-        gradient_bottom: hex(bottom),
+        gradient_top: gradient ? hex(gradient[0]) : null,
+        gradient_bottom: gradient ? hex(gradient[1]) : null,
         dim,
         hatched,
         name: material,
@@ -339,6 +346,148 @@ function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
         calibrated: s.calState === CalState.CONFIGURED,
         actions: tileActions(m, unitIdx, bay),
     }
+}
+
+// The colors the spool editor offers by name: the same 18 the display's palette
+// sheet draws (src/view/view.c k_palette). The nearest entry names any other
+// color, so a tag read or an off-shade still gets a sensible name.
+const PALETTE: [number, Parameters<typeof str>[0]][] = [
+    [0xffffff, 'COLOR_WHITE'],
+    [0xa6a9aa, 'COLOR_SILVER'],
+    [0x5f6368, 'COLOR_GRAY'],
+    [0x000000, 'COLOR_BLACK'],
+    [0x9d432c, 'COLOR_BROWN'],
+    [0xe4bd68, 'COLOR_GOLD'],
+    [0xc12e1f, 'COLOR_RED'],
+    [0x9d2235, 'COLOR_MAROON'],
+    [0xff6a13, 'COLOR_ORANGE'],
+    [0xf4ee2a, 'COLOR_YELLOW'],
+    [0x00ae42, 'COLOR_GREEN'],
+    [0x1f5c3a, 'COLOR_FOREST_GREEN'],
+    [0x00b1b7, 'COLOR_TURQUOISE'],
+    [0x0086d6, 'COLOR_CYAN'],
+    [0x0a2989, 'COLOR_BLUE'],
+    [0x5e43b7, 'COLOR_PURPLE'],
+    [0xec008c, 'COLOR_MAGENTA'],
+    [0xf55a74, 'COLOR_PINK'],
+]
+
+/** The colors the editor offers by name, in order. */
+export const paletteCount = (): number => PALETTE.length
+export const paletteColor = (i: number): number => PALETTE[i]?.[0] ?? 0
+export const paletteName = (i: number): string => (PALETTE[i] ? str(PALETTE[i][1]) : '')
+
+/** The palette name nearest to `rgb` (squared RGB distance). */
+export function colorName(rgb: number): string {
+    let best = 0
+    let bestD = -1
+    const r = (rgb >> 16) & 0xff
+    const g = (rgb >> 8) & 0xff
+    const b = rgb & 0xff
+    PALETTE.forEach(([c], i) => {
+        const d = (r - ((c >> 16) & 0xff)) ** 2 + (g - ((c >> 8) & 0xff)) ** 2 + (b - (c & 0xff)) ** 2
+        if (bestD < 0 || d < bestD) {
+            bestD = d
+            best = i
+        }
+    })
+    return paletteName(best)
+}
+
+/** A number as the C prints it (the form fields are doubles), shown as cJSON shows a double. */
+const fnum = (x: number): number => cjsonNumber(x)
+
+/** "Edit spool": material, color, vendor, both weights and the pressure advance
+ *  of the bay's spool, each starting from what the model knows (or a default,
+ *  editDefaults). The one line carries every field; the mapper sends only the
+ *  ones the user changed (actions.ts, `spool edit`). Dimmed, with its reason,
+ *  while the host cannot take it: no edit endpoint, Spoolman offline or an
+ *  empty bay. */
+function addEditAction(list: ActionList, m: Model, unitIdx: number, bay: number, id: string): void {
+    const s = m.units[unitIdx].slots[bay]
+    const d = editDefaults(m, unitIdx, bay)
+    const a = list.add(
+        'edit_spool',
+        str('ACTION_EDIT_SPOOL'),
+        `spool edit ${id} material={material} color={color} vendor={vendor} remaining={remaining} initial={initial} pa={pa}`,
+        'normal'
+    )
+    if (!a) return
+    const fields: ViewField[] = []
+    const pool: number[] = [] // the options taken so far: the shared pool's size
+    const select = (fid: string, label: string, value: number, options: { value: number; label: string }[]): void => {
+        const kept: { value: number; label: string }[] = []
+        for (const o of options) {
+            if (pool.length >= MAX_OPTIONS) break
+            pool.push(o.value)
+            kept.push({ value: o.value, label: cut(o.label, OPTION_LABEL) })
+        }
+        fields.push({
+            id: fid,
+            label,
+            kind: 'select',
+            value: fnum(value),
+            min: 0,
+            max: 0,
+            step: 0,
+            unit: '',
+            options: kept,
+        })
+    }
+    const number = (
+        fid: string,
+        label: string,
+        value: number,
+        min: number,
+        max: number,
+        step: number,
+        unit: string
+    ): void => {
+        fields.push({
+            id: fid,
+            label,
+            kind: 'number',
+            value: fnum(value),
+            min: fnum(min),
+            max: fnum(max),
+            step: fnum(step),
+            unit,
+        })
+    }
+
+    select('material', str('EDIT_MATERIAL'), d.material, [
+        ...MATERIALS.map((name, i) => ({ value: i, label: name })),
+        ...(d.material === MATERIALS.length ? [{ value: MATERIALS.length, label: s.material }] : []),
+    ])
+
+    const colors = [
+        ...(d.color < 0 ? [{ value: -1, label: str('EDIT_COLOR_UNSET') }] : []),
+        ...PALETTE.map(([rgb], i) => ({ value: rgb, label: paletteName(i) })),
+    ]
+    if (d.color >= 0 && !PALETTE.some(([rgb]) => rgb === d.color)) {
+        colors.push({ value: d.color, label: `#${d.color.toString(16).toUpperCase().padStart(6, '0')}` })
+    }
+    select('color', str('EDIT_COLOR'), d.color, colors)
+
+    const n = editVendorCount(m)
+    const vendors = Array.from({ length: n }, (_, i) => ({ value: i, label: editVendorName(m, i) }))
+    if (d.vendor === n) vendors.push({ value: n, label: s.brand })
+    select('vendor', str('EDIT_VENDOR'), d.vendor, vendors)
+
+    number('remaining', str('FIELD_REMAINING_LABEL'), d.remainingG, 0, 10000, 1, str('FIELD_WEIGHT_UNIT'))
+    number('initial', str('FIELD_INITIAL_LABEL'), d.initialG, 1, 10000, 1, str('FIELD_WEIGHT_UNIT'))
+    number('pa', str('EDIT_PA'), d.paX1000 / 1000, 0, 2, 0.001, '')
+    a.form = { fields }
+
+    const pa = `${Math.trunc(d.paX1000 / 1000)}.${String(d.paX1000 % 1000).padStart(3, '0')}`
+    check(
+        a,
+        cut(
+            `spool edit ${id} material=${d.material} color=${d.color} vendor=${d.vendor} remaining=${d.remainingG} initial=${d.initialG} pa=${pa}`,
+            ACTION_LINE
+        ),
+        m
+    )
 }
 
 /** The tile's actions, a fixed set in a fixed order; enabled and reason come
@@ -356,6 +505,8 @@ function tileActions(m: Model, unitIdx: number, bay: number): ViewAction[] {
     if (unload && m.printing)
         confirm(unload, str('CONFIRM_UNLOAD_TITLE'), str('CONFIRM_UNLOAD_TEXT'), str('CONFIRM_UNLOAD_OK'))
 
+    addEditAction(list, m, unitIdx, bay, id)
+
     // Assign a Spoolman spool from the list, or refresh the list first.
     if (m.spools.some((sp) => sp.id !== 0)) {
         const line = cut(`link ${id} {spool}`, ACTION_LINE)
@@ -371,7 +522,7 @@ function tileActions(m: Model, unitIdx: number, bay: number): ViewAction[] {
                     label: fmtSpoolOption(sp.vendor, sp.material, sp.remainingG, OPTION_LABEL),
                 })
                 // The bay's current link (else the first spool) is the default.
-                if (options.length === 1 || sp.id === s.spoolId) value = f32(sp.id)
+                if (options.length === 1 || sp.id === s.spoolId) value = sp.id
             }
             a.form = {
                 fields: [
@@ -846,13 +997,17 @@ function buildToolhead(m: Model, index: number): ViewToolhead {
     if (th.loaded) {
         const gi = th.loadedUnit >= 0 ? slotGroup(m, th.loadedUnit, th.loadedSlot) : -1
         let color = 0
+        let known = false
         if (th.loadedExt < 0 && th.loadedUnit >= 0 && th.loadedUnit < m.units.length) {
             const slot = m.units[th.loadedUnit].slots[th.loadedSlot]
-            if (slot) color = slot.color
+            if (slot && slot.colorKnown) {
+                color = slot.color
+                known = true
+            }
         }
         tool = {
             label: cut(gi >= 0 ? m.groups[gi].name : str('UNKNOWN_MARK'), LABEL),
-            color: hex(color),
+            color: known ? hex(color) : null,
             ink: inkFor(color),
         }
     }
@@ -994,6 +1149,7 @@ export function buildView(m: Model): View {
             close: str('LABEL_CLOSE'),
             cancel: str('LABEL_CANCEL'),
             no_response: str('LABEL_NO_RESPONSE'),
+            edit_failed: str('LABEL_EDIT_FAILED'),
         },
         spoolman: { online: m.spoolmanOnline, pending },
         settings: SETTING_KEYS.map((_, i) => buildSetting(m, i)),

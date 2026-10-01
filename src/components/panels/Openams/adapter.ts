@@ -96,6 +96,12 @@ export class OpenamsAdapter {
         return this.apply('metadata', '', file)
     }
 
+    /** Spoolman's vendors (`GET /v1/vendor` through `server.spoolman.proxy`), the
+     *  names the spool editor offers. */
+    applyVendorList(vendors: unknown): boolean {
+        return this.apply('vendor_list', '', Array.isArray(vendors) ? vendors : [])
+    }
+
     applySpoolList(spools: unknown): boolean {
         const list = Array.isArray(spools) ? spools.map(asSpool).filter((spool) => spool !== null) : []
 

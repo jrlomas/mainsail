@@ -200,6 +200,8 @@ export interface ViewLabels {
     cancel: string
     /** What the panel says when an action got no answer. */
     no_response: string
+    /** "Could not save the spool:": the lead of a host's refusal of an edit, which ends in its own colon; a renderer adds the host's words after a space. */
+    edit_failed: string
 }
 
 export interface View {
@@ -234,6 +236,7 @@ export type ObjectKind =
     | 'print_stats'
     | 'toolhead'
     | 'spool_list' // a whole result (an array), not a diff
+    | 'vendor_list' // a whole result (an array), not a diff
     | 'metadata' // a whole result, not a diff
 
 export interface Core {

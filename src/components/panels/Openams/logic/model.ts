@@ -19,6 +19,8 @@ export const MAX_ALERTS = 8
 export const MAX_GROUPS = 8
 export const MAX_GROUP_MEMBERS = 8
 export const MAX_SPOOLS = 16
+export const MAX_VENDORS = 16
+const VENDOR_LEN = 32
 export const MAX_TOOLS = 8
 export const MAX_TOOLHEADS = 4
 /** The alert queue between a mapping call and the history (one apply). */
@@ -52,7 +54,8 @@ export const Variant = { AMS: 0, AMS2_PRO: 1, AMS_HT: 2, LANE: 3 } as const
 // ------------------------------------------------------------------ types
 
 export interface Slot {
-    color: number // 0xRRGGBB
+    color: number // 0xRRGGBB; meaningful only when colorKnown
+    colorKnown: boolean // false: no color data (a neutral tile); a known 0x000000 is black filament
     material: string
     brand: string
     remainingPct: number // -1 = unknown
@@ -149,6 +152,7 @@ export interface SpoolEntry {
     material: string
     vendor: string
     color: number
+    colorKnown: boolean // false: the filament has no color_hex
     remainingG: number // -1 = unknown
 }
 
@@ -168,6 +172,10 @@ export interface Model {
     spools: SpoolEntry[]
     settings: Settings
     spoolmanOnline: boolean
+    /** The component can edit a bay's spool (`edit` in its status). */
+    spoolmanEdit: boolean
+    /** Spoolman's vendor names, as listed (sorted), each whole. */
+    vendors: string[]
     /** The display's own unit: the C mirrors this unit's toolhead into legacy
      *  globals (busy, busyUnit) that the bare `stop` line still reads. */
     thisUnit: number
@@ -189,6 +197,7 @@ export interface Model {
 function slotClear(): Slot {
     return {
         color: 0,
+        colorKnown: false,
         material: '',
         brand: '',
         remainingPct: -1,
@@ -223,6 +232,8 @@ export function newModel(): Model {
         spools: [],
         settings: settingsDefaults(),
         spoolmanOnline: false,
+        spoolmanEdit: false,
+        vendors: [],
         thisUnit: 0,
         busy: Busy.NONE,
         busyUnit: -1,
@@ -580,13 +591,14 @@ function mapSeverity(sev: string | null): number {
     return Sev.INFO
 }
 
-/** "0A2989" -> 0x0A2989; anything that is not up to six hex digits is black. */
-function mapHexColor(hex: string | null): number {
-    if (!hex) return 0
+/** "0A2989" -> 0x0A2989; null for an empty string or anything that is not up to
+ *  six hex digits: that is a color nobody told us, not black. */
+function mapHexColor(hex: string | null): number | null {
+    if (!hex) return null
     let v = 0
     for (let n = 0; n < hex.length; n++) {
-        if (!/^[0-9a-fA-F]$/.test(hex[n])) return 0
-        if (n >= 6) return 0
+        if (!/^[0-9a-fA-F]$/.test(hex[n])) return null
+        if (n >= 6) return null
         v = (v << 4) | parseInt(hex[n], 16)
     }
     return v
@@ -941,6 +953,8 @@ export function applyComponentStatus(m: Model, obj: unknown): boolean {
     if (!isObject(bays)) return false
 
     if (typeof obj.spoolman_online === 'boolean') m.spoolmanOnline = obj.spoolman_online
+    // a component that predates the edit endpoint sends no `edit`: it can't
+    m.spoolmanEdit = obj.edit === true
 
     for (const [key, bay] of Object.entries(bays)) {
         if (!isObject(bay)) continue
@@ -963,7 +977,10 @@ export function applyComponentStatus(m: Model, obj: unknown): boolean {
             const hex = jstring(spool, 'color_hex')
             if (material !== null) s.material = cut(material, MATERIAL)
             if (vendor !== null) s.brand = cut(vendor, MATERIAL)
-            if (hex !== null) s.color = mapHexColor(hex)
+            // a summary with no (or an unreadable) color_hex has no color
+            const color = mapHexColor(hex)
+            s.color = color ?? 0
+            s.colorKnown = color !== null
             const grams = jint(spool, 'remaining_g')
             if (grams !== null) s.remainingG = i16(grams)
             const pct = jint(spool, 'remaining_pct')
@@ -990,6 +1007,7 @@ export function applyComponentStatus(m: Model, obj: unknown): boolean {
             // the tile reads like one that never held a spool instead of keeping the
             // removed spool's color and percentage.
             s.color = 0
+            s.colorKnown = false
             s.material = ''
             s.brand = ''
             s.remainingPct = -1
@@ -1062,14 +1080,16 @@ export function applySpoolList(m: Model, arr: unknown): boolean {
         if (id === null) continue
         if (m.spools.length >= MAX_SPOOLS) break
 
-        const entry: SpoolEntry = { id, material: '', vendor: '', color: 0, remainingG: -1 }
+        const entry: SpoolEntry = { id, material: '', vendor: '', color: 0, colorKnown: false, remainingG: -1 }
         if (typeof spool.remaining_weight === 'number') entry.remainingG = toInt(spool.remaining_weight)
         const filament = spool.filament
         if (isObject(filament)) {
             const mat = jstring(filament, 'material')
             const hex = jstring(filament, 'color_hex')
             if (mat !== null) entry.material = cut(mat, SPOOL_MATERIAL)
-            if (hex !== null) entry.color = mapHexColor(hex)
+            const color = mapHexColor(hex)
+            entry.color = color ?? 0
+            entry.colorKnown = color !== null
             const vname = isObject(filament.vendor) ? jstring(filament.vendor, 'name') : null
             if (vname !== null) entry.vendor = cut(vname, SPOOL_VENDOR)
         }
@@ -1077,6 +1097,114 @@ export function applySpoolList(m: Model, arr: unknown): boolean {
     }
     refreshThis(m)
     return true
+}
+
+/** Whether a vendor name fits the edit form whole: 1 to VENDOR_LEN - 1 bytes. */
+function vendorFits(name: string | null): name is string {
+    return name !== null && name.length > 0 && new TextEncoder().encode(name).length < VENDOR_LEN
+}
+
+const foldAscii = (s: string): Uint8Array => new TextEncoder().encode(s.replace(/[A-Z]/g, (c) => c.toLowerCase()))
+
+/** ASCII case-insensitive byte order: the same in both cores, which a
+ *  locale-aware sort would not be. */
+function vendorCmp(a: string, b: string): number {
+    const x = foldAscii(a)
+    const y = foldAscii(b)
+    for (let i = 0; i < Math.min(x.length, y.length); i++) {
+        if (x[i] !== y[i]) return x[i] - y[i]
+    }
+    return x.length - y.length
+}
+
+/** The Spoolman vendor list (a whole result): the names that fit whole, without
+ *  repeats, at most MAX_VENDORS of them, sorted case-insensitively. */
+export function applyVendorList(m: Model, arr: unknown): boolean {
+    if (!Array.isArray(arr)) return false
+    const names: string[] = []
+    for (const vendor of arr) {
+        const name = isObject(vendor) ? jstring(vendor, 'name') : null
+        if (!vendorFits(name)) continue
+        if (names.some((n) => vendorCmp(n, name) === 0)) continue
+        if (names.length >= MAX_VENDORS) break
+        names.push(name)
+    }
+    names.sort(vendorCmp)
+    m.vendors = names
+    refreshThis(m)
+    return true
+}
+
+// ------------------------------------------------------------- spool edit
+
+/** The common materials the edit form offers, in order. A spool's own
+ *  material, when it is none of these, is one more choice (index MATERIALS.length). */
+export const MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC', 'PLA-CF', 'PETG-CF', 'PVA']
+export const VENDOR_GENERIC = 'Generic'
+
+/** ASCII case-insensitive equality: Spoolman keeps a material or a vendor as
+ *  typed, so "pla" and "PLA" are one choice. */
+const ciEqual = (a: string, b: string): boolean =>
+    a.replace(/[A-Z]/g, (c) => c.toLowerCase()) === b.replace(/[A-Z]/g, (c) => c.toLowerCase())
+
+/** How many vendors the edit form offers: Spoolman's list, plus "Generic" when
+ *  it does not hold it. A bay's own vendor, when it is none of these, is one
+ *  more choice (index editVendorCount). */
+export const editVendorCount = (m: Model): number =>
+    m.vendors.length + (m.vendors.some((v) => ciEqual(v, VENDOR_GENERIC)) ? 0 : 1)
+
+export const editVendorName = (m: Model, i: number): string =>
+    i < 0 || i >= editVendorCount(m) ? '' : i < m.vendors.length ? m.vendors[i] : VENDOR_GENERIC
+
+/** What the edit form starts from for a bay (mmu_edit_defaults in C): its own
+ *  facts where the model has them, else a default. */
+export interface EditDefaults {
+    material: number // index of MATERIALS, or MATERIALS.length: the bay's own
+    color: number // 0xRRGGBB, -1 = no known color
+    vendor: number // index of editVendorName, or editVendorCount: the bay's own
+    remainingG: number
+    initialG: number // read back from the remaining grams and percent; 1000 when unknown
+    paX1000: number // pressure advance * 1000; 20 when unknown
+}
+
+export function editDefaults(m: Model, unitIdx: number, slotIdx: number): EditDefaults {
+    const d: EditDefaults = { material: 0, color: -1, vendor: 0, remainingG: 1000, initialG: 1000, paX1000: 20 }
+    const s = m.units[unitIdx]?.slots[slotIdx]
+    if (!s) return d
+
+    d.material = s.material ? MATERIALS.length : 0
+    for (let i = 0; i < MATERIALS.length; i++) {
+        if (ciEqual(s.material, MATERIALS[i])) {
+            d.material = i
+            break
+        }
+    }
+
+    if (s.colorKnown) d.color = s.color & 0xffffff
+
+    const n = editVendorCount(m)
+    d.vendor = n
+    for (let i = 0; i < n; i++) {
+        if (ciEqual(s.brand, editVendorName(m, i))) {
+            d.vendor = i
+            break
+        }
+    }
+    if (!s.brand) {
+        for (let i = 0; i < n; i++) {
+            if (editVendorName(m, i) === VENDOR_GENERIC) d.vendor = i
+        }
+    }
+
+    // the host reports grams left and percent left, so the spool's size is read
+    // back from the two; a spool that never said keeps Spoolman's 1000
+    if (s.remainingG >= 0 && s.remainingPct > 0) {
+        const v = Math.trunc((s.remainingG * 100 + Math.trunc(s.remainingPct / 2)) / s.remainingPct)
+        if (v >= 1) d.initialG = v
+    }
+    if (s.remainingG > d.initialG) d.initialG = s.remainingG
+    d.remainingG = s.remainingG >= 0 ? s.remainingG : d.initialG
+    return d
 }
 
 /** The job's file metadata: per-tool grams needed, and a shortfall alert for

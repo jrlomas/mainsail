@@ -174,6 +174,20 @@ export class Interactivity {
         this.press(action)
     }
 
+    /** A call the host waited on is over: the action stops waiting, and a
+     *  refusal (the printer's own words) is said in the message row, after the
+     *  core's "Could not save the spool:" (the lead of an edit's refusal). */
+    settle(line: string, message?: string): void {
+        // A host that answers at once does so before the press is recorded (run()
+        // calls the runner first), so the settling waits for the end of the click.
+        queueMicrotask(() => {
+            this.release(line)
+            if (!message) return
+            const lead = this.current?.labels.edit_failed ?? ''
+            this.flash(lead ? `${lead} ${message}` : message, 'error')
+        })
+    }
+
     /** Say something for a while: a core's reason, a dimmed action's, or the
      *  panel's own. It goes in the panel's one message row, so nothing moves. */
     flash(text: string, tone: Tone = 'neutral'): void {

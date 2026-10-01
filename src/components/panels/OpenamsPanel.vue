@@ -20,6 +20,15 @@ import type { OpenamsStoreState } from './Openams/adapter'
 import OpenamsView from './Openams/components/OpenamsView.vue'
 import type { ActionResult } from './Openams/logic'
 
+/** The words of a refused call: Mainsail's socket rejects with the JSON-RPC
+ *  error, `{ code, message }`. */
+function errorMessage(error: unknown): string {
+    if (typeof error === 'object' && error !== null && 'message' in error)
+        return String((error as { message: unknown }).message)
+
+    return String(error)
+}
+
 @Component({ components: { OpenamsView } })
 export default class OpenamsPanel extends Mixins(BaseMixin) {
     mdiViewGrid = mdiViewGrid
@@ -88,16 +97,34 @@ export default class OpenamsPanel extends Mixins(BaseMixin) {
     /** What the user chose in the panel, sent the way Mainsail sends its own:
      *  G-code through the gcode script call (so it shows in the console), an RPC
      *  by its method, a refusal as Mainsail's transient error. A `local` result
-     *  is display-only and goes nowhere. */
-    onRequest(result: ActionResult) {
-        const socket = this.$socket as unknown as { emit: (method: string, params?: unknown) => void }
+     *  is display-only and goes nowhere.
+     *
+     *  The spool edit is the one call waited on: the printer can refuse it in
+     *  words of its own ("Spoolman is offline"), which go back to the panel with
+     *  `done`, and the vendor list is read again after it (the host may have
+     *  added one). */
+    onRequest(result: ActionResult, done?: (message?: string) => void) {
+        const socket = this.$socket as unknown as {
+            emit: (method: string, params?: unknown) => void
+            emitAndWait: (method: string, params?: unknown) => Promise<unknown>
+        }
 
         switch (result.kind) {
             case 'gcode':
                 socket.emit('printer.gcode.script', { script: result.script })
                 break
             case 'rpc':
-                socket.emit(result.method, result.params)
+                if (result.method === 'server.openams_spoolman.edit') {
+                    socket.emitAndWait(result.method, result.params).then(
+                        () => {
+                            done?.()
+                            this.requestVendors()
+                        },
+                        (error: unknown) => done?.(errorMessage(error))
+                    )
+                } else {
+                    socket.emit(result.method, result.params)
+                }
                 break
             case 'error':
                 this.$toast.error(result.reason)
@@ -119,9 +146,29 @@ export default class OpenamsPanel extends Mixins(BaseMixin) {
         }
 
         try {
-            this.adapter.applyComponentStatus(await socket.emitAndWait('server.openams_spoolman.status'))
+            const status = await socket.emitAndWait('server.openams_spoolman.status')
+
+            this.adapter.applyComponentStatus(status)
+            if ((status as { edit?: unknown } | null)?.edit === true) this.requestVendors()
         } catch (e) {
             window.console.warn('[OpenAMS]: server.openams_spoolman.status failed', e)
+        }
+    }
+
+    /** The names the spool editor offers as vendors: Spoolman's own list, read
+     *  the way Mainsail reads its spools (through the proxy). A host whose
+     *  component can edit has Spoolman, so this only runs then. */
+    async requestVendors() {
+        const socket = this.$socket as unknown as {
+            emitAndWait: (method: string, params?: unknown) => Promise<unknown>
+        }
+
+        try {
+            this.adapter.applyVendorList(
+                await socket.emitAndWait('server.spoolman.proxy', { request_method: 'GET', path: '/v1/vendor' })
+            )
+        } catch (e) {
+            window.console.warn('[OpenAMS]: the Spoolman vendor list failed', e)
         }
     }
 }

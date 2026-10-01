@@ -50,7 +50,12 @@ export type Theme = 'host' | 'dark' | 'light'
  * It also owns the one interaction state (Interactivity) and the one dialog,
  * and emits `request` with the ActionResult for every action that has one. That
  * event is the host's contract: a Mainsail wrapper sends the gcode or makes the
- * RPC call, so the panel itself never talks to a printer. */
+ * RPC call, so the panel itself never talks to a printer.
+ *
+ * The event's second argument, `done(message?)`, is for a call the host waits
+ * on (the spool edit, the only one a printer can refuse with words of its own):
+ * `done()` ends the action's wait, `done(text)` ends it with the printer's
+ * refusal in the panel's message row, in red, after "Could not save the spool:". */
 // The name is spelled out rather than taken from the class: in Mainsail's
 // tree this view and the panel wrapper beside it are both registered, and the
 // wrapper keeps the name OpenamsPanel.
@@ -175,7 +180,9 @@ export default class OpenamsView extends Vue {
         const logic = this.logic
         if (!logic) return null
         const result = logic.action(line, form)
-        if (result.kind === 'gcode' || result.kind === 'rpc') this.$emit('request', result)
+        if (result.kind === 'gcode' || result.kind === 'rpc') {
+            this.$emit('request', result, (message?: string) => this.ctrl.settle(line, message))
+        }
         return result
     }
 }

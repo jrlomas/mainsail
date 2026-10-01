@@ -92,6 +92,46 @@ describe('the adapter fed an OpenAMS store', () => {
     })
 })
 
+// The spool editor is offered while the host's component can edit (`edit` in its
+// status) and Spoolman is up, and starts its vendor choice from Spoolman's list.
+describe('the spool editor', () => {
+    const editOf = (view: ReturnType<OpenamsAdapter['view']>) =>
+        view.toolheads[0].units[0].bays[0].actions.find((action) => action.id === 'edit_spool')
+
+    it('is dimmed until the component says it can edit, then offers the vendors', () => {
+        const adapter = new OpenamsAdapter()
+
+        adapter.feedStore(store)
+        adapter.applyComponentStatus({ spoolman_online: true, bays: {} })
+        expect(editOf(adapter.view())?.enabled).toBe(false)
+
+        adapter.applyComponentStatus({
+            spoolman_online: true,
+            edit: true,
+            bays: {
+                'oams1-0': {
+                    spool: {
+                        material: 'PLA',
+                        vendor: 'Polymaker',
+                        color_hex: 'FF0000',
+                        remaining_g: 500,
+                        remaining_pct: 50,
+                    },
+                },
+            },
+        })
+        adapter.applyVendorList([
+            { id: 1, name: 'Polymaker' },
+            { id: 2, name: 'Bambu Lab' },
+        ])
+
+        const edit = editOf(adapter.view())
+        expect(edit?.enabled).toBe(true)
+        const vendor = edit?.form?.fields.find((field) => field.id === 'vendor')
+        expect(vendor?.options?.map((option) => option.label)).toEqual(['Bambu Lab', 'Polymaker', 'Generic'])
+    })
+})
+
 // The panel inside Mainsail speaks the page's language, not its own default:
 // a Mainsail page is the user's, and the panel is a guest on it (PRINCIPLES.md
 // 6). The mapping is the one place the two sets of codes meet, because they are

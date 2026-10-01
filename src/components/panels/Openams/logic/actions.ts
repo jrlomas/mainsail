@@ -8,7 +8,17 @@
 //   a result { kind: 'gcode' | 'rpc' | 'error' | 'local' }  (ActionResult)
 
 import { cut } from './cstr'
-import { Busy, DryState, SlotState, slotGroup, slotId } from './model'
+import {
+    Busy,
+    DryState,
+    editDefaults,
+    editVendorCount,
+    editVendorName,
+    MATERIALS,
+    SlotState,
+    slotGroup,
+    slotId,
+} from './model'
 import type { Model } from './model'
 import { format, str } from './strings'
 import type { ActionResult } from './types'
@@ -406,21 +416,163 @@ export function actionsMap(line: string, m: Model, capacity = 512): Mapped {
     return r
 }
 
-/** The RPC vocabulary: `spool list`, `spool confirm <slot> <grams>` and
- *  `job metadata <file>`. */
-export function actionsRpc(line: string, m: Model): { method: string; params: Record<string, unknown> } | null {
-    if (line === 'spool list') {
-        return { method: 'server.spoolman.proxy', params: { request_method: 'GET', path: '/v1/spool' } }
+/** What the RPC mapper says about a line: a call, a refusal with its reason, or
+ *  "not mine" (actions_rpc_why's +1, -1 and 0). */
+type RpcMapped = { rc: 1; method: string; params: Record<string, unknown> } | { rc: -1; why: string } | { rc: 0 }
+
+/** One `key=value` token of a `spool edit` line; null at the end or for a
+ *  token that is not of that shape. */
+function editTokens(text: string): [string, string][] | null {
+    const out: [string, string][] = []
+    for (const token of text.split(' ').filter((t) => t.length > 0)) {
+        const eq = token.indexOf('=')
+        if (eq <= 0 || eq === token.length - 1 || eq > 15 || token.length - eq - 1 > 23) return null
+        out.push([token.slice(0, eq), token.slice(eq + 1)])
     }
+    return out
+}
+
+const EDIT_INT = /^[+-]?\d+$/
+// The dot introduces the fraction, so the two digit runs cannot trade digits
+// (an optional dot between two \d* runs backtracks super-linearly).
+const EDIT_NUM = /^([+-]?)(\d*)(?:\.(\d*))?$/
+
+/** A plain decimal as whole thousandths (edit_milli in C): the fourth decimal
+ *  rounds half up and nothing past it counts; no floating point is involved. */
+function editMilli(text: string): number | null {
+    const m = EDIT_NUM.exec(text)
+    const fraction = m?.[3] ?? ''
+    if (!m || (m[2].length === 0 && fraction.length === 0)) return null
+    const whole = Math.min(Number(m[2] || '0'), 1001) // past 1000 it only has to stay past it
+    const frac = Number((fraction + '000').slice(0, 3))
+    const up = fraction.length > 3 && fraction[3] >= '5' ? 1 : 0
+    const v = whole * 1000 + frac + up
+    return m[1] === '-' && v !== 0 ? -v : v
+}
+
+/** `spool edit <slot> [material=<n>] [color=<rgb>] [vendor=<n>] [remaining=<g>]
+ *  [initial=<g>] [pa=<x>]` -> server.openams_spoolman.edit (actions_map.c's
+ *  spool_edit). The selects' values are the form's own: material and vendor are
+ *  indices into the lists the edit form offers (an index one past the list is
+ *  the bay's own), color is 0xRRGGBB as a decimal number or -1 for "none", the
+ *  weights are grams and pa is the pressure advance itself. A key left out is a
+ *  field left as it is, and so is one equal to what the form starts from
+ *  (editDefaults): only a change is sent. The line never carries a vendor's
+ *  name, only its index, so it has one shape for both renderers and needs no
+ *  quoting. */
+function spoolEdit(args: string, m: Model): RpcMapped {
+    const words = args.replace(/^ +/, '')
+    const sp = words.indexOf(' ')
+    const id = sp < 0 ? words : words.slice(0, sp)
+    if (id.length === 0 || id.length >= 32) return { rc: 0 }
+    const found = slotFind(m, id)
+    if (!found) return { rc: 0 }
+
+    const tokens = editTokens(sp < 0 ? '' : words.slice(sp + 1))
+    if (!tokens) return { rc: 0 }
+    const given: Record<string, number> = {}
+    for (const [key, val] of tokens) {
+        if (key === 'pa') {
+            const milli = editMilli(val)
+            if (milli === null) return { rc: 0 }
+            given[key] = milli
+            continue
+        } else if (['material', 'color', 'vendor', 'remaining', 'initial'].includes(key)) {
+            if (!EDIT_INT.test(val)) return { rc: 0 }
+        } else {
+            return { rc: 0 }
+        }
+        given[key] = Number(val)
+    }
+    const has = (k: string): boolean => k in given
+
+    // what the bay can do now: the view's dimming and this refusal in one
+    if (!m.spoolmanEdit) return { rc: -1, why: str('REASON_EDIT_NO_SPOOLMAN') }
+    if (!m.spoolmanOnline) return { rc: -1, why: str('REASON_SPOOLMAN_OFFLINE') }
+    const s = m.units[found.unit].slots[found.slot]
+    if (s.state === SlotState.EMPTY) return { rc: -1, why: str('REASON_BAY_EMPTY') }
+
+    const d = editDefaults(m, found.unit, found.slot)
+    const create = s.spoolId < 0
+    const range = { rc: -1, why: str('REASON_EDIT_RANGE') } as const
+
+    const effRemaining = has('remaining') ? given.remaining : d.remainingG
+    const effInitial = has('initial') ? given.initial : d.initialG
+    const paX1000 = has('pa') ? Math.min(given.pa, 100000) : d.paX1000
+    if (
+        effRemaining < 0 ||
+        effInitial <= 0 ||
+        effRemaining > 100000 ||
+        effInitial > 100000 ||
+        paX1000 < 0 ||
+        paX1000 > 2000 ||
+        (has('color') && (given.color < -1 || given.color > 0xffffff))
+    ) {
+        return range
+    }
+
+    const params: Record<string, unknown> = { unit: m.units[found.unit].name, bay: found.slot }
+
+    // an index one past the list is the bay's own, which is no change (and a bay
+    // with none of its own has no such choice)
+    const vendorOwn = editVendorCount(m)
+    if (
+        (has('material') &&
+            (given.material < 0 ||
+                given.material > MATERIALS.length ||
+                (given.material === MATERIALS.length && !s.material))) ||
+        (has('vendor') && (given.vendor < 0 || given.vendor > vendorOwn || (given.vendor === vendorOwn && !s.brand)))
+    ) {
+        return { rc: -1, why: str('REASON_EDIT_STALE') }
+    }
+
+    // a new spool needs its material, so it is always sent with one
+    if (create || (has('material') && given.material !== MATERIALS.length && given.material !== d.material)) {
+        const k = has('material') ? given.material : d.material
+        params.material = k === MATERIALS.length ? s.material : MATERIALS[k]
+    }
+    if (has('color') && given.color >= 0 && given.color !== d.color) {
+        params.color_hex = given.color.toString(16).toUpperCase().padStart(6, '0')
+    }
+    if (has('vendor') && given.vendor !== vendorOwn && given.vendor !== d.vendor) {
+        params.vendor = editVendorName(m, given.vendor)
+    }
+    if ((has('remaining') && given.remaining !== d.remainingG) || (has('initial') && given.initial !== d.initialG)) {
+        if (effRemaining > effInitial) return { rc: -1, why: str('REASON_EDIT_EXCEEDS') }
+        if (has('remaining') && given.remaining !== d.remainingG) params.remaining_weight = given.remaining
+        if (has('initial') && given.initial !== d.initialG) params.initial_weight = given.initial
+    }
+    if (has('pa') && paX1000 !== d.paX1000) params.flow_k = paX1000 / 1000
+
+    // the unit and bay alone are no edit; a new spool is
+    if (!create && Object.keys(params).length <= 2) return { rc: -1, why: str('EDIT_NO_CHANGES') }
+    return { rc: 1, method: 'server.openams_spoolman.edit', params }
+}
+
+/** The RPC vocabulary: `spool list`, `vendor list`, `spool edit <slot> key=value
+ *  ...`, `spool confirm <slot> <grams>` and `job metadata <file>`, with the
+ *  refusals told apart (actions_rpc_why in C). */
+export function actionsRpcMapped(line: string, m: Model): RpcMapped {
+    if (line === 'spool list') {
+        return { rc: 1, method: 'server.spoolman.proxy', params: { request_method: 'GET', path: '/v1/spool' } }
+    }
+
+    if (line === 'vendor list') {
+        return { rc: 1, method: 'server.spoolman.proxy', params: { request_method: 'GET', path: '/v1/vendor' } }
+    }
+
+    const edit = rest(line, 'spool edit')
+    if (edit !== null) return spoolEdit(edit, m)
 
     if (line.startsWith('spool confirm ')) {
         const s = new Scanner(line.slice(14))
         const id = s.word(31)
         const grams = id === null ? null : s.int()
-        if (id === null || grams === null) return null
+        if (id === null || grams === null) return { rc: 0 }
         const found = slotFind(m, id)
-        if (!found) return null
+        if (!found) return { rc: 0 }
         return {
+            rc: 1,
             method: 'server.openams_spoolman.confirm',
             params: { bay: `${m.units[found.unit].name}-${found.slot}`, remaining_g: grams },
         }
@@ -428,11 +580,17 @@ export function actionsRpc(line: string, m: Model): { method: string; params: Re
 
     if (line.startsWith('job metadata ')) {
         const filename = line.slice(13)
-        if (!filename) return null
-        return { method: 'server.files.metadata', params: { filename } }
+        if (!filename) return { rc: 0 }
+        return { rc: 1, method: 'server.files.metadata', params: { filename } }
     }
 
-    return null
+    return { rc: 0 }
+}
+
+/** The RPC call a line maps to, or null (a refusal is not a call). */
+export function actionsRpc(line: string, m: Model): { method: string; params: Record<string, unknown> } | null {
+    const r = actionsRpcMapped(line, m)
+    return r.rc === 1 ? { method: r.method, params: r.params } : null
 }
 
 /**
@@ -444,6 +602,16 @@ export function actionsCheck(line: string, m: Model): { enabled: boolean; why: s
     const r = actionsMap(line, m, 128)
     if (r.rc === 1) return { enabled: true, why: '' }
     if (r.rc === -1) return { enabled: false, why: r.why }
+
+    // Not a G-code line: the RPC vocabulary next.
+    const rpc = actionsRpcMapped(line, m)
+    if (rpc.rc === -1) {
+        // "No changes to save" is about this submission, not about the action: the
+        // form's own starting values are always that, and the action is still there
+        // to open.
+        if (rpc.why === str('EDIT_NO_CHANGES')) return { enabled: true, why: '' }
+        return { enabled: false, why: rpc.why }
+    }
     return { enabled: true, why: '' }
 }
 
@@ -505,7 +673,8 @@ export function coreAction(m: Model, line: string, form: Record<string, unknown>
     if (mapped.rc === 1) return { kind: 'gcode', script: mapped.script }
     if (mapped.rc === -1) return { kind: 'error', reason: mapped.why }
 
-    const rpc = actionsRpc(filled.line, m)
-    if (rpc) return { kind: 'rpc', method: rpc.method, params: rpc.params }
+    const rpc = actionsRpcMapped(filled.line, m)
+    if (rpc.rc === 1) return { kind: 'rpc', method: rpc.method, params: rpc.params }
+    if (rpc.rc === -1) return { kind: 'error', reason: rpc.why }
     return { kind: 'local' }
 }

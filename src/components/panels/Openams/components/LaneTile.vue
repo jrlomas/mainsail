@@ -186,6 +186,17 @@ export default class LaneTile extends Vue {
         text-shadow: none;
     }
 
+    /* A spool whose color nobody told us: the neutral surface, never a black fill
+       that reads as black filament (principle 1). The text keeps the host's own
+       ink, so it holds 4.5:1 on the surface in any theme. */
+    /* (:where keeps the specificity low, so a loaded or error ring still wins.) */
+    &:where(.bare:not(.dim)) {
+        --ink: var(--oams-text);
+        --ring-track: var(--oams-line);
+        box-shadow: inset 0 0 0 1px var(--oams-line);
+        text-shadow: none;
+    }
+
     /* One disabled look: flat and dimmed, whatever the state. */
     &.dim {
         --ink: var(--oams-text-muted);
