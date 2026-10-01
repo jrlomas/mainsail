@@ -464,6 +464,29 @@ function groupAddMember(m: Model, group: number, unit: number, slot: number): vo
     g.members.push({ unit: i8(unit), slot: i8(slot) })
 }
 
+/** Remove one bay from a group, the other members keeping their order. */
+function groupRemoveMember(m: Model, group: number, unit: number, slot: number): void {
+    const g = m.groups[group]
+    g.members = g.members.filter((mem) => mem.unit !== unit || mem.slot !== slot)
+}
+
+/** Every bay of `unit` leaves every group, the other members keeping their
+ *  order: an update that lists groups is the host's whole answer for the unit
+ *  it came from, so a bay it does not list is in no group of that unit. */
+function groupDropUnit(m: Model, unit: number): void {
+    for (const g of m.groups) g.members = g.members.filter((mem) => mem.unit !== unit)
+}
+
+/** Drop the group at `group`, the table keeping its order, and repair every
+ *  stored group index: a deleted index reads -1 now, a higher one drops by
+ *  one. */
+function groupDelete(m: Model, group: number): void {
+    m.groups.splice(group, 1)
+    const shift = (idx: number): number => (idx > group ? idx - 1 : idx === group ? -1 : idx)
+    for (const th of m.toolheads) th.currentGroup = shift(th.currentGroup)
+    m.currentGroup = shift(m.currentGroup)
+}
+
 /**
  * The next usable spare of a group: the first ready member with filament in
  * order, or null. A group with one member has no spare (docs/GROUPS.md).
@@ -1046,6 +1069,7 @@ export function applyOpenamsUi(m: Model, obj: unknown): boolean {
     const th = toolheadGetOrCreate(m, u.lane)
     const thIndex = th ? m.toolheads.indexOf(th) : -1
     u.toolhead = thIndex
+    const uIndex = m.units.indexOf(u)
 
     if (typeof obj.online === 'boolean') u.connected = obj.online
 
@@ -1056,7 +1080,7 @@ export function applyOpenamsUi(m: Model, obj: unknown): boolean {
 
     // Groups before the lane: a LOADED lane resolves its current group by
     // looking the bay up in the groups that were just built.
-    mapGroups(m, obj.groups)
+    mapGroups(m, uIndex, obj.groups)
     if (th) {
         mapLane(m, th, obj.lane)
         const nf = jint(obj, 'nf') ?? 0 // the lane's fault count, a sibling of `fault`
@@ -1067,15 +1091,70 @@ export function applyOpenamsUi(m: Model, obj: unknown): boolean {
     return true
 }
 
-function mapGroups(m: Model, groups: unknown): void {
+/** The order groups are listed in: by name, a run of digits read as a
+ *  number, so "T2" comes before "T10"; anything else compares character by
+ *  character (group_name_cmp). */
+function groupNameCmp(a: string, b: string): number {
+    let i = 0
+    let j = 0
+    while (i < a.length && j < b.length) {
+        const ca = a.charCodeAt(i)
+        const cb = b.charCodeAt(j)
+        if (ca >= 48 && ca <= 57 && cb >= 48 && cb <= 57) {
+            let ei = i
+            let ej = j
+            while (ei < a.length && a.charCodeAt(ei) >= 48 && a.charCodeAt(ei) <= 57) ei++
+            while (ej < b.length && b.charCodeAt(ej) >= 48 && b.charCodeAt(ej) <= 57) ej++
+            const x = Number(a.slice(i, ei))
+            const y = Number(b.slice(j, ej))
+            if (x !== y) return x < y ? -1 : 1
+            i = ei
+            j = ej
+            continue
+        }
+        if (ca !== cb) return ca < cb ? -1 : 1
+        i++
+        j++
+    }
+    return i < a.length ? 1 : j < b.length ? -1 : 0
+}
+
+/** Put the table in name order (stable: equal names keep their order) and
+ *  repair every stored group index (groups_sort). */
+function groupsSort(m: Model): void {
+    const order = m.groups.map((_, i) => i)
+    order.sort((x, y) => groupNameCmp(m.groups[x].name, m.groups[y].name) || x - y)
+    const where: number[] = []
+    order.forEach((old, now) => {
+        where[old] = now
+    })
+    m.groups = order.map((old) => m.groups[old])
+    const remap = (idx: number): number => (idx >= 0 && idx < where.length ? where[idx] : idx)
+    for (const th of m.toolheads) th.currentGroup = remap(th.currentGroup)
+    m.currentGroup = remap(m.currentGroup)
+}
+
+/**
+ * The `groups` of one unit's update: the host's whole answer for that unit, so
+ * its bays are rebuilt from scratch and a group it stopped listing leaves the
+ * table once it holds no bay at all. Without a `groups` field the update is a
+ * delta and the groups are left alone (map_groups).
+ */
+function mapGroups(m: Model, unit: number, groups: unknown): void {
     if (!Array.isArray(groups)) return
+    groupDropUnit(m, unit)
+    const listed = new Set<number>()
     for (const g of groups) {
         if (!isObject(g)) continue
         const name = jstring(g, 'n')
         if (!name) continue
         const gi = groupGetOrCreate(m, name)
         if (gi < 0) continue
+        listed.add(gi)
+        // No `b`: the group holds none of this unit's bays, so whatever it still
+        // carries belongs to other units and stays.
         if (!Array.isArray(g.b)) continue
+        m.groups[gi].members = [] // this list is the whole membership
         for (const ref of g.b) {
             if (typeof ref !== 'string') continue
             const r = refResolve(m, ref)
@@ -1083,9 +1162,21 @@ function mapGroups(m: Model, groups: unknown): void {
             // keeps the members it can show, in order.
             if (r.unit < 0) continue
             if (r.slot < 0 || r.slot >= m.units[r.unit].slots.length) continue
+            // A bay another unit's older update left in a different group moves
+            // here: the newest answer wins.
+            const other = slotGroup(m, r.unit, r.slot)
+            if (other >= 0 && other !== gi) groupRemoveMember(m, other, r.unit, r.slot)
             groupAddMember(m, gi, r.unit, r.slot)
         }
     }
+    // A group the host stopped listing and that holds no bay at all is gone
+    // from the lane. Walked from the top, so that no index below one already
+    // deleted moves out from under the flags.
+    for (let i = m.groups.length - 1; i >= 0; i--) {
+        if (listed.has(i) || m.groups[i].members.length > 0) continue
+        groupDelete(m, i)
+    }
+    groupsSort(m)
 }
 
 // ------------------------------------------------------ other objects
