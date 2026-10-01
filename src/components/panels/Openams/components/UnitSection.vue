@@ -31,7 +31,6 @@
         <ul class="lanes">
             <lane-tile v-for="bay in unit.bays" :key="bay.slot_id" :tile="bay" />
         </ul>
-        <group-list v-if="hasGroups" :unit="unit" :labels="labels" />
         <action-popover v-if="env" :anchor-id="anchor" :heading="unit.subtitle" :actions="unit.actions" name="unit" />
     </section>
 </template>
@@ -41,23 +40,16 @@ import { Component, Prop, Vue } from 'vue-property-decorator'
 import type { ViewLabels, ViewUnit } from '../logic/index'
 import ActionPopover from './ActionPopover.vue'
 import AlertBadge from './AlertBadge.vue'
-import GroupList from './GroupList.vue'
 import LaneTile from './LaneTile.vue'
 import { newAnchor } from '../popover'
 
 /** A unit: its header (title, config name, alert slot, pills) and its bays.
  *  The card's width follows the lane count (--n), so an AMS HT is as wide as
  *  its one lane and the tiles are the same size in every unit. */
-@Component({ components: { ActionPopover, AlertBadge, GroupList, LaneTile } })
+@Component({ components: { ActionPopover, AlertBadge, LaneTile } })
 export default class UnitSection extends Vue {
     @Prop({ required: true }) readonly unit!: ViewUnit
     @Prop({ required: true }) readonly labels!: ViewLabels
-
-    /** A unit with no group and no spare bay has nothing to say about
-     *  groups, so it does not reserve the section (principle 2). */
-    get hasGroups(): boolean {
-        return this.unit.groups.length > 0 || this.unit.ungrouped_bays.length > 0
-    }
 
     /** The humidity and temperature reading opens the drying and heating
      *  menu, when the unit has one (UNIFIED_UI.md 4b). */

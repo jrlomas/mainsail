@@ -10,8 +10,20 @@
                 data-target="tile"
                 data-popover-invoker="tile"></button>
             <div class="lane-top">
-                <span class="lane-id">{{ tile.label }}</span>
-                <spare-badge v-if="tile.spare" :spare="tile.spare" />
+                <span class="lane-group">
+                    <span class="lane-id">{{ tile.label }}</span>
+                    <spare-badge v-if="tile.spare" :spare="tile.spare" />
+                    <button
+                        v-if="changeGroup"
+                        type="button"
+                        class="group-hit"
+                        data-target="group"
+                        :aria-label="groupLabel"
+                        :title="groupTitle"
+                        :aria-disabled="changeGroup.enabled ? undefined : 'true'"
+                        :aria-haspopup="changeGroup.enabled ? 'dialog' : undefined"
+                        @click="openGroup"></button>
+                </span>
                 <rfid-icon v-if="tile.rfid" />
             </div>
             <div v-if="tile.sublabel" class="lane-sub">{{ tile.sublabel }}</div>
@@ -55,7 +67,7 @@
 </template>
 
 <script lang="ts">
-import { Component, Prop, Vue } from 'vue-property-decorator'
+import { Component, Inject, Prop, Vue } from 'vue-property-decorator'
 import type { ViewAction, ViewTile } from '../logic/index'
 import ActionPopover from './ActionPopover.vue'
 import ActionRow from './ActionRow.vue'
@@ -63,23 +75,48 @@ import RfidIcon from './RfidIcon.vue'
 import Ring from './Ring.vue'
 import SpareBadge from './SpareBadge.vue'
 import StatusTag from './StatusTag.vue'
+import { INTERACT, type Interactivity } from '../interact'
 import { newAnchor } from '../popover'
 
 /** One bay: the label, the sublabel, the spool's name and meta, and the ring
  *  with its tag. Every string is the core's. The state drives the CSS classes
  *  and nothing else, so a new state needs no code here.
  *
- *  The three click targets of a tile (UNIFIED_UI.md 4b) are the whole tile, the
- *  ring and the tag, each opening the actions the core marked for it. */
+ *  The click targets of a tile (UNIFIED_UI.md 4b) are the whole tile, the
+ *  ring and the tag, each opening the actions the core marked for it, and the
+ *  tool pill (`T0 ∞n`), which changes the bay's group: the pill is where the
+ *  group is shown, so it is where it is changed. */
 @Component({ components: { ActionPopover, ActionRow, RfidIcon, Ring, SpareBadge, StatusTag } })
 export default class LaneTile extends Vue {
     @Prop({ required: true }) readonly tile!: ViewTile
+    @Inject(INTERACT) readonly ctrl!: Interactivity
 
     /** One anchor per target: the ids are unique per page, so two panels
      *  mounted at once never fight over the same popover. */
     readonly ringAnchor = newAnchor()
     readonly tagAnchor = newAnchor()
     readonly tileAnchor = newAnchor()
+
+    /** The bay's own "Change group..." (it also stays in the ring's list). */
+    get changeGroup(): ViewAction | undefined {
+        return this.tile.actions.find((a) => a.id === 'change_group')
+    }
+
+    /** The pill's click: the bay's own change-group, as the ring's row does. */
+    openGroup(): void {
+        if (this.changeGroup) this.ctrl.ask(this.changeGroup)
+    }
+
+    /** "Change group… (T0)": the action, and the group the pill shows. */
+    get groupLabel(): string {
+        return this.changeGroup ? `${this.changeGroup.label} (${this.tile.label})` : ''
+    }
+
+    /** A dimmed change says why, on hover (principle 8). */
+    get groupTitle(): string | undefined {
+        const action = this.changeGroup
+        return action && !action.enabled && action.reason ? action.reason : undefined
+    }
 
     /** A tile with no spool has no ring, but its place stays reserved so the
      *  tag sits at the same height on every tile. */
@@ -348,6 +385,45 @@ export default class LaneTile extends Vue {
     align-items: center;
     gap: 5px;
     min-width: 0;
+}
+
+/* The tool pill: the group's name and the spare badge, one target. It is
+   stacked above the tile's own target as a whole, so a hover effect that
+   gives it a stacking context (the filter below) cannot sink it under the
+   tile mid-click. */
+.lane-group {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+/* The pill's target, grown to the 44 px floor (principle 12) and drawn over
+   the tile's own target, so a click on the pill changes the group and a click
+   anywhere else on the tile still opens the tile's actions. */
+.group-hit {
+    position: absolute;
+    left: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: max(44px, calc(100% + 12px));
+    height: max(44px, 100%);
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+
+    &[aria-disabled='true'] {
+        cursor: default;
+    }
+
+    @include oams-focus;
+}
+
+.lane-group:has(.group-hit:hover:not([aria-disabled='true'])) {
+    filter: brightness(1.15);
 }
 
 .lane-id {
