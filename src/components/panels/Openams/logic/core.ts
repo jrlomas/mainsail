@@ -14,6 +14,8 @@
 import { coreAction } from './actions'
 import { cut, jsonEqual } from './cstr'
 import {
+    actionResult,
+    ActionKind,
     applyComponentStatus,
     applyLanes,
     applyMetadata,
@@ -46,6 +48,9 @@ interface Entry {
 }
 
 const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/** A whole number at `key`, or null when it is not one. */
+const jnum = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) ? v : null)
 
 /** Add or replace every key of `update` on `dst`; whether anything changed.
  *  A status diff arrives several times a second, so keys are compared one by
@@ -96,6 +101,16 @@ export class OpenamsLogic implements Core {
 
     private applyJson(kind: string, name: string, obj: unknown): boolean {
         const m = this.model
+
+        // The host's answer to an action the display sent. It is not a status, so
+        // it owns no copy and goes straight to the model.
+        if (kind === 'action_result') {
+            if (!isObject(obj)) return false
+            const k = jnum(obj.kind)
+            if (k === null || k < ActionKind.OTHER || k > ActionKind.UNLOAD) return false
+            actionResult(m, k as ActionKind, obj.ok === true, typeof obj.message === 'string' ? obj.message : '')
+            return true
+        }
 
         // spool_list, vendor_list and metadata are whole results, so the owned copy is replaced.
         if (kind === 'spool_list' || kind === 'vendor_list' || kind === 'metadata') {

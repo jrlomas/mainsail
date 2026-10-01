@@ -39,6 +39,11 @@ export interface ViewField {
 
 export interface ViewForm {
     fields: ViewField[]
+    /** What the submit button says, or null for a form that has none: a
+     *  renderer treats null as "behave as before". */
+    submit_label: string | null
+    /** True when submitting the form as it stands would change nothing. */
+    require_change: boolean
 }
 
 export interface ViewAction {
@@ -212,6 +217,9 @@ export interface View {
     alert_count: number
     unread_count: number
     notice: { text: string } | null
+    /** "Nothing is loading", for a list that has nothing to offer: no load or
+     *  unload is under way anywhere, and so none of the list's rows apply. */
+    nothing_to_load: { text: string } | null
     labels: ViewLabels
     spoolman: { online: boolean; pending: string[] }
     settings: ViewSetting[]
@@ -238,6 +246,9 @@ export type ObjectKind =
     | 'spool_list' // a whole result (an array), not a diff
     | 'vendor_list' // a whole result (an array), not a diff
     | 'metadata' // a whole result, not a diff
+    | 'action_result' // not a status: the host's answer to an action the
+// display sent ({kind, ok, message}), which goes
+// straight to the model
 
 export interface Core {
     /**

@@ -100,7 +100,7 @@ const OPTION_LABEL = 72
 const MAX_ACTIONS = 9
 const MAX_ACTIONS_PER_ALERT = 2
 const MAX_ALERTS_PER_GROUP = 6
-const MAX_OPTIONS = 56 // every select of one action list shares the pool, as in C
+const MAX_OPTIONS = 104 // every select of one action list shares the pool, as in C
 const MAX_ALERTS = 8
 const MAX_PENDING_SPOOLS = 8
 const MAX_UNASSIGNED = 6
@@ -477,7 +477,11 @@ function addEditAction(list: ActionList, m: Model, unitIdx: number, bay: number,
     number('remaining', str('FIELD_REMAINING_LABEL'), d.remainingG, 0, 10000, 1, str('FIELD_WEIGHT_UNIT'))
     number('initial', str('FIELD_INITIAL_LABEL'), d.initialG, 1, 10000, 1, str('FIELD_WEIGHT_UNIT'))
     number('pa', str('EDIT_PA'), d.paX1000 / 1000, 0, 2, 0.001, '')
-    a.form = { fields }
+    /* The one form with a submit button: the row that sends it says "Save edit"
+     * (the action it is here for is "Edit spool"), and a submission that changed
+     * nothing is the host's own refusal to answer. The other forms carry neither
+     * and their renderers behave as before. */
+    a.form = { fields, submit_label: str('ACTION_SAVE_EDIT'), require_change: true }
 
     const pa = `${Math.trunc(d.paX1000 / 1000)}.${String(d.paX1000 % 1000).padStart(3, '0')}`
     check(
@@ -538,6 +542,8 @@ function tileActions(m: Model, unitIdx: number, bay: number): ViewAction[] {
                         options,
                     },
                 ],
+                submit_label: null,
+                require_change: false,
             }
             check(a, cut(`link ${id} ${Math.trunc(value)}`, ACTION_LINE), m)
         }
@@ -615,6 +621,8 @@ function unitActions(m: Model, unitIdx: number): ViewAction[] {
                     unit: str('FIELD_HOURS_UNIT'),
                 },
             ],
+            submit_label: null,
+            require_change: false,
         }
         if (u.cannotDryReason) {
             a.enabled = false
@@ -1140,6 +1148,9 @@ export function buildView(m: Model): View {
         alert_count: panelAlerts.length,
         unread_count: panelAlerts.filter((a) => a.unread).length,
         notice,
+        // The empty list's own words: a list with nothing in it has no load under
+        // way anywhere to report on, so it says so rather than showing a blank.
+        nothing_to_load: m.busyUnit < 0 && !m.loaded ? { text: str('NOTICE_NOTHING_TO_LOAD') } : null,
         labels: {
             alerts: str('LABEL_ALERTS'),
             settings: str('LABEL_SETTINGS'),

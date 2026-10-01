@@ -128,7 +128,12 @@ describe('the spool editor', () => {
         const edit = editOf(adapter.view())
         expect(edit?.enabled).toBe(true)
         const vendor = edit?.form?.fields.find((field) => field.id === 'vendor')
-        expect(vendor?.options?.map((option) => option.label)).toEqual(['Bambu Lab', 'Polymaker', 'Generic'])
+        // Generic first, then Spoolman's own vendors sorted, then the curated brands
+        // Spoolman does not already list, each once.
+        const labels = vendor?.options?.map((option) => option.label) ?? []
+        expect(labels.slice(0, 3)).toEqual(['Generic', 'Bambu Lab', 'Polymaker'])
+        expect(labels).toContain('Prusament')
+        expect(new Set(labels).size).toBe(labels.length)
     })
 })
 

@@ -19,7 +19,7 @@ export const MAX_ALERTS = 8
 export const MAX_GROUPS = 8
 export const MAX_GROUP_MEMBERS = 8
 export const MAX_SPOOLS = 16
-export const MAX_VENDORS = 16
+export const MAX_VENDORS = 64 // MMU_MAX_VENDORS: Spoolman's own plus the curated brands
 const VENDOR_LEN = 32
 export const MAX_TOOLS = 8
 export const MAX_TOOLHEADS = 4
@@ -167,6 +167,46 @@ export interface Settings {
     applyPaOnLoad: boolean
 }
 
+/** MMU_REFUSAL_LEN, the C's action_refusal / edit_refusal buffer. */
+const REFUSAL_LEN = 192
+
+/** What an action the display sent does, which is what its answer is about: a
+ *  load or an unload the load screen waits on, or anything else. The C's
+ *  mmu_action_kind_t. */
+export const ActionKind = { OTHER: 0, LOAD: 1, UNLOAD: 2 } as const
+export type ActionKind = (typeof ActionKind)[keyof typeof ActionKind]
+
+/** The kind of the action line `line` (as the display wrote it: "load A2",
+ *  "unload A2"), or ActionKind.OTHER for anything else. The C's
+ *  mmu_action_kind_of(). */
+export function actionKindOf(line: string | null | undefined): ActionKind {
+    if (!line) return ActionKind.OTHER
+    if (line.startsWith('load ')) return ActionKind.LOAD
+    if (line.startsWith('unload ')) return ActionKind.UNLOAD
+    return ActionKind.OTHER
+}
+
+/** The display just sent a load or an unload and the host has not reported it
+ *  yet, so the load screen says it is starting rather than "Nothing is
+ *  loading". The C's mmu_model_action_sent(). */
+export function actionSent(m: Model, kind: ActionKind): void {
+    if (kind === ActionKind.OTHER) return
+    m.actionPendingKind = kind
+    m.actionPendingSeq = (m.actionPendingSeq + 1) & 0xff
+}
+
+/** The host's answer to an action of that kind: `message` is its own words
+ *  when it refused, "" when it took the action. The C's
+ *  mmu_model_action_result(). */
+export function actionResult(m: Model, kind: ActionKind, ok: boolean, message: string): void {
+    m.actionRefusal = ok ? '' : cut(message ?? '', REFUSAL_LEN)
+    m.actionRefusalKind = kind
+    m.actionSeq = (m.actionSeq + 1) & 0xff
+    // The host has spoken about this one, so it is no longer a load the load
+    // screen is waiting on.
+    if (!ok && kind === m.actionPendingKind) m.actionPendingKind = ActionKind.OTHER
+}
+
 export interface Model {
     units: Unit[]
     toolheads: Toolhead[]
@@ -178,9 +218,26 @@ export interface Model {
     spoolmanEdit: boolean
     /** Spoolman's vendor names, as listed (sorted), each whole. */
     vendors: string[]
+
     /** The display's own unit: the C mirrors this unit's toolhead into legacy
-     *  globals (busy, busyUnit) that the bare `stop` line still reads. */
+     *  globals (loaded, busy, busyUnit) that the bare `stop` line still reads. */
     thisUnit: number
+    /** The this-toolhead's own `loaded`, as the C's `m->loaded`. */
+    loaded: boolean
+    /** The last spool-edit answer, said once: the host's own words when it
+     *  refused, "" when it took the edit. `editSeq` moves with every answer. */
+    editRefusal: string
+    editSeq: number
+    /** The host's answer to an action the display sent (`ActionKind`):
+     *  `actionRefusal` is its own words when it refused, "" when it took the
+     *  action, and `actionSeq` moves with every answer so it is said once.
+     *  `actionPendingKind` is a load or an unload the host has not reported
+     *  yet, and `actionPendingSeq` moves with each new one. */
+    actionRefusal: string
+    actionRefusalKind: ActionKind
+    actionSeq: number
+    actionPendingKind: ActionKind
+    actionPendingSeq: number
     busy: number
     busyUnit: number
     /** Always false on the web: only the display's demo scenarios set it. */
@@ -239,6 +296,14 @@ export function newModel(): Model {
         spoolmanEdit: false,
         vendors: [],
         thisUnit: 0,
+        loaded: false,
+        editRefusal: '',
+        editSeq: 0,
+        actionRefusal: '',
+        actionRefusalKind: ActionKind.OTHER,
+        actionSeq: 0,
+        actionPendingKind: ActionKind.OTHER,
+        actionPendingSeq: 0,
         busy: Busy.NONE,
         busyUnit: -1,
         printing: false,
@@ -502,6 +567,7 @@ export function refreshThis(m: Model): void {
     const unit = m.units[m.thisUnit]
     const th = unit && unit.toolhead >= 0 ? m.toolheads[unit.toolhead] : undefined
     if (!th) return
+    m.loaded = th.loaded
     m.busy = th.busy
     m.busyUnit = th.busyUnit
 }
@@ -1148,8 +1214,51 @@ function vendorCmp(a: string, b: string): number {
     return x.length - y.length
 }
 
+export const VENDOR_GENERIC = 'Generic'
+
+/** The brands a fresh Spoolman has none of, so the editor would otherwise
+ *  offer "Generic" and nothing else. Merged with Spoolman's own list by
+ *  applyVendorList(); the same list, in the same order, is in
+ *  src/backend/status_map.c, and the differential tests are what keeps the two
+ *  honest. Brand names are not translated: they are the same in every
+ *  language, and a host that has one keeps its own spelling. */
+export const CURATED_VENDORS = [
+    VENDOR_GENERIC,
+    'Bambu Lab',
+    'Polymaker',
+    'Prusament',
+    'eSUN',
+    'Sunlu',
+    'Elegoo',
+    'Overture',
+    'Hatchbox',
+    'Creality',
+    'Anycubic',
+    'Jayo',
+    'Eryone',
+    'Inland',
+    'Fillamentum',
+    'Fiberlogy',
+    'ColorFabb',
+    'Extrudr',
+    'Protopasta',
+    'Siraya Tech',
+    'Atomic Filament',
+    'MatterHackers',
+    'Spectrum',
+    'Azurefilm',
+    'Kingroon',
+    'Geeetech',
+    'Voxelab',
+    'Amolen',
+    '3DXTech',
+    'Das Filament',
+]
+
 /** The Spoolman vendor list (a whole result): the names that fit whole, without
- *  repeats, at most MAX_VENDORS of them, sorted case-insensitively. */
+ *  repeats, at most MAX_VENDORS of them, sorted case-insensitively, then the
+ *  curated brands that Spoolman's list does not already name, and "Generic"
+ *  first of all. */
 export function applyVendorList(m: Model, arr: unknown): boolean {
     if (!Array.isArray(arr)) return false
     const names: string[] = []
@@ -1161,6 +1270,17 @@ export function applyVendorList(m: Model, arr: unknown): boolean {
         names.push(name)
     }
     names.sort(vendorCmp)
+    // Spoolman's own spelling of a brand wins, and a brand only Spoolman knows
+    // stays; the curated ones fill in behind them.
+    for (const name of CURATED_VENDORS) {
+        if (names.length >= MAX_VENDORS) break
+        if (names.some((n) => vendorCmp(n, name) === 0)) continue
+        names.push(name)
+    }
+    // "Generic" leads: it is the answer for a spool nobody has attributed yet,
+    // and the editor steps through the list, so it is the first tap.
+    const generic = names.findIndex((n) => vendorCmp(n, VENDOR_GENERIC) === 0)
+    if (generic > 0) names.unshift(names.splice(generic, 1)[0])
     m.vendors = names
     refreshThis(m)
     return true
@@ -1168,15 +1288,14 @@ export function applyVendorList(m: Model, arr: unknown): boolean {
 
 // ------------------------------------------------------------- spool edit
 
-/** The common materials the edit form offers, in order. A spool's own
- *  material, when it is none of these, is one more choice (index MATERIALS.length). */
-export const MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC', 'PLA-CF', 'PETG-CF', 'PVA']
-export const VENDOR_GENERIC = 'Generic'
-
 /** ASCII case-insensitive equality: Spoolman keeps a material or a vendor as
  *  typed, so "pla" and "PLA" are one choice. */
 const ciEqual = (a: string, b: string): boolean =>
     a.replace(/[A-Z]/g, (c) => c.toLowerCase()) === b.replace(/[A-Z]/g, (c) => c.toLowerCase())
+
+/** The common materials the edit form offers, in order. A spool's own
+ *  material, when it is none of these, is one more choice (index MATERIALS.length). */
+export const MATERIALS = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'PA', 'PC', 'PLA-CF', 'PETG-CF', 'PVA']
 
 /** How many vendors the edit form offers: Spoolman's list, plus "Generic" when
  *  it does not hold it. A bay's own vendor, when it is none of these, is one
