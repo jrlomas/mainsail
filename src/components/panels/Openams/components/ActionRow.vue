@@ -41,8 +41,11 @@ export default class ActionRow extends Vue {
     choose(): void {
         const before = this.ctrl.dialog
         this.ctrl.ask(this.action)
-        // A dialog goes over the popover, and leaves no popover behind it.
-        if (this.ctrl.dialog && !before) closePopover(this.$el as Element)
+        // A chosen action is done with the menu: it closes, whether the action
+        // went to the printer or a dialog now goes over it (and a dialog leaves
+        // no popover behind it). A dimmed action only says why, so the menu
+        // stays for another choice.
+        if (this.action.enabled || (this.ctrl.dialog && !before)) closePopover(this.$el as Element)
     }
 }
 </script>
