@@ -1,6 +1,26 @@
 <template>
     <span class="alert-wrap">
-        <span v-if="!group" class="alert-slot none" aria-hidden="true"></span>
+        <span v-if="!group && !clear" class="alert-slot none" aria-hidden="true"></span>
+        <span
+            v-else-if="!group"
+            class="alert-slot none"
+            role="img"
+            :aria-label="labels.no_alerts"
+            :title="labels.no_alerts">
+            <svg
+                class="none-icon"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true">
+                <path d="M5 12.5l4.5 4.5L19 7.5" />
+            </svg>
+        </span>
         <template v-else>
             <button
                 type="button"
@@ -42,10 +62,16 @@ import { newAnchor } from '../popover'
 
 /** The alert slot of a toolhead card or a unit header: an icon with a count
  *  that opens its items, each with its own actions (UNIFIED_UI.md 4b). The
- *  slot's space is always reserved, so the layout never changes (principle 2). */
+ *  slot's space is always reserved, so the layout never changes (principle 2),
+ *  and when nothing in its scope alerts at all it rests on a muted check named
+ *  "No alerts" (not a control: it does nothing here, so it is not focusable). */
 @Component({ components: { ActionPopover, ActionRow, ToneIcon } })
 export default class AlertBadge extends Vue {
     @Prop({ default: null }) readonly group!: ViewAlertGroup | null
+    /** Nothing in the scope alerts at all (the view's `alert_clear`). An empty
+     *  slot without it is not "No alerts": what alerts is shown elsewhere, right
+     *  beside the slot (the message row), so the slot stays empty. */
+    @Prop({ default: false }) readonly clear!: boolean
     @Prop({ required: true }) readonly labels!: ViewLabels
 
     /** One popover per badge: the ids are unique per page, so two badges never
@@ -78,6 +104,10 @@ export default class AlertBadge extends Vue {
     align-items: center;
     justify-content: center;
     gap: 3px;
+}
+
+.alert-slot.none {
+    color: var(--oams-text-muted);
 }
 
 button.alert-slot {

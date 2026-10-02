@@ -90,6 +90,7 @@ const SUBLABEL = 32
 const MESSAGE = 176
 const PRESSURE_TEXT = 12
 const STEP_DETAIL = 128 // VIEW_STEP_DETAIL_LEN in src/view/view.h: "{step} · {detail}"
+const REST_PATH = 128 // VIEW_REST_PATH_LEN: "{tool} · {spool} · {material}"
 const SCALE = 8
 const UNIT_ID = 8
 const ENV_TEXT = 48
@@ -102,13 +103,13 @@ const SPOOL_NAME = 64 // the {spool} of a low-filament sentence
 const RUNOUT_TARGET = LABEL * 3
 const SETTING_KEY = 32
 const ACTION_ID = 20
-const ACTION_LINE = 128
+const ACTION_LINE = 136
 const OPTION_LABEL = 72
 
 const MAX_ACTIONS = 10 // VIEW_ACTIONS_MAX in src/view/view.h
 const MAX_ACTIONS_PER_ALERT = 2
 const MAX_ALERTS_PER_GROUP = 6
-const MAX_OPTIONS = 120 // every select of one action list shares the pool, as in C
+const MAX_OPTIONS = 160 // every select of one action list shares the pool, as in C
 const MAX_ALERTS = 8
 const MAX_PENDING_SPOOLS = 8
 const MAX_UNASSIGNED = 6
@@ -246,24 +247,19 @@ function confirm(a: ViewAction, title: string, text: string, ok: string): void {
 /** A tile's tag: text, tone and the sentence that explains it. */
 type Tag = NonNullable<ViewTile['tag']>
 
-function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
+/** A tile's own state word, and the tag that goes with it.
+ *
+ *  State, in the order a fault or a motion in progress outranks a plain
+ *  material reading: error > runout > loading/unloading > positioning > the
+ *  raw slot state. */
+function tileStateAndTag(m: Model, unitIdx: number, bay: number): { state: ViewTile['state']; tag: Tag | null } {
     const u = m.units[unitIdx]
     const s = u.slots[bay]
-    const gi = slotGroup(m, unitIdx, bay)
     const th = u.toolhead >= 0 && u.toolhead < m.toolheads.length ? m.toolheads[u.toolhead] : undefined
-
-    // The label is the tool, or "?" for a bay in no group; the sublabel is always
-    // the bay's "Spool N".
-    const tool = gi >= 0 ? cut(m.groups[gi].name, LABEL) : null
-    const label = tool ?? str('UNKNOWN_MARK')
-    const spare = gi >= 0 ? computeSpare(m, gi, unitIdx, bay) : null
-
-    // State, in the order a fault or a motion in progress outranks a plain
-    // material reading: error > runout > loading/unloading > positioning > the
-    // raw slot state.
+    const mkTag = (text: string, tone: Tone): Tag => ({ text, tone, detail: '', code: '' })
     let state: ViewTile['state']
     let tag: Tag | null = null
-    const mkTag = (text: string, tone: Tone): Tag => ({ text, tone, detail: '', code: '' })
+
     if (s.state === SlotState.ERROR) {
         state = 'error'
         tag = mkTag(str('TAG_ERROR'), 'error')
@@ -311,6 +307,29 @@ function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
             tag.code = cut(th.errorCode, ALERT_CODE)
         }
     }
+    return { state, tag }
+}
+
+/** A bay nobody has identified: ready, but nothing says what is in it, which is
+ *  what the tile's own state calls "unknown" (the tile labelled "?"). Loading
+ *  it asks for the spool first, so what reaches the host is an answer the user
+ *  chose (PRINCIPLES.md 13). */
+function bayIsUnknown(m: Model, unitIdx: number, bay: number): boolean {
+    return tileStateAndTag(m, unitIdx, bay).state === 'unknown'
+}
+
+function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
+    const u = m.units[unitIdx]
+    const s = u.slots[bay]
+    const gi = slotGroup(m, unitIdx, bay)
+
+    // The label is the tool, or "?" for a bay in no group; the sublabel is always
+    // the bay's "Spool N".
+    const tool = gi >= 0 ? cut(m.groups[gi].name, LABEL) : null
+    const label = tool ?? str('UNKNOWN_MARK')
+    const spare = gi >= 0 ? computeSpare(m, gi, unitIdx, bay) : null
+
+    const { state, tag } = tileStateAndTag(m, unitIdx, bay)
 
     // One disabled look: an empty or unidentified bay, or a unit that is offline.
     const dim = state === 'empty' || state === 'unknown' || !u.connected
@@ -407,23 +426,25 @@ const fnum = (x: number): number => cjsonNumber(x)
 
 /** "Edit spool": material, color, vendor, both weights and the pressure advance
  *  of the bay's spool, each starting from what the model knows (or a default,
- *  editDefaults). The one line carries every field; the mapper sends only the
- *  ones the user changed (actions.ts, `spool edit`). Dimmed, with its reason,
- *  while the host cannot take it: no edit endpoint, Spoolman offline or an
- *  empty bay. */
-function addEditAction(list: ActionList, m: Model, unitIdx: number, bay: number, id: string): void {
+ *  editDefaults). Two actions ask for them - "Edit spool", and "Load" on a bay
+ *  nobody has identified - so they are built once here and both take them
+ *  whole (PRINCIPLES.md 13: one task, one place to do it).
+ *
+ *  `chooseMaterial` puts the one choice only the user can make at the head of
+ *  the material list: the line spells it -1, the mapper refuses that until the
+ *  field has been answered, and the field says so. */
+function editFields(m: Model, unitIdx: number, bay: number, chooseMaterial: boolean): ViewField[] {
     const s = m.units[unitIdx].slots[bay]
     const d = editDefaults(m, unitIdx, bay)
-    const a = list.add(
-        'edit_spool',
-        str('ACTION_EDIT_SPOOL'),
-        `spool edit ${id} material={material} color={color} vendor={vendor} remaining={remaining} initial={initial} pa={pa}`,
-        'normal'
-    )
-    if (!a) return
     const fields: ViewField[] = []
     const pool: number[] = [] // the options taken so far: the shared pool's size
-    const select = (fid: string, label: string, value: number, options: { value: number; label: string }[]): void => {
+    const select = (
+        fid: string,
+        label: string,
+        value: number,
+        required: boolean,
+        options: { value: number; label: string }[]
+    ): void => {
         const kept: { value: number; label: string }[] = []
         for (const o of options) {
             if (pool.length >= MAX_OPTIONS) break
@@ -440,6 +461,7 @@ function addEditAction(list: ActionList, m: Model, unitIdx: number, bay: number,
             step: 0,
             unit: '',
             options: kept,
+            required,
         })
     }
     const number = (
@@ -460,10 +482,12 @@ function addEditAction(list: ActionList, m: Model, unitIdx: number, bay: number,
             max: fnum(max),
             step: fnum(step),
             unit,
+            required: false,
         })
     }
 
-    select('material', str('EDIT_MATERIAL'), d.material, [
+    select('material', str('EDIT_MATERIAL'), chooseMaterial ? -1 : d.material, chooseMaterial, [
+        ...(chooseMaterial ? [{ value: -1, label: str('MATERIAL_CHOOSE') }] : []),
         ...MATERIALS.map((name, i) => ({ value: i, label: name })),
         ...(d.material === MATERIALS.length ? [{ value: MATERIALS.length, label: s.material }] : []),
     ])
@@ -475,31 +499,88 @@ function addEditAction(list: ActionList, m: Model, unitIdx: number, bay: number,
     if (d.color >= 0 && !PALETTE.some(([rgb]) => rgb === d.color)) {
         colors.push({ value: d.color, label: `#${d.color.toString(16).toUpperCase().padStart(6, '0')}` })
     }
-    select('color', str('EDIT_COLOR'), d.color, colors)
+    select('color', str('EDIT_COLOR'), d.color, false, colors)
 
     const n = editVendorCount(m)
     const vendors = Array.from({ length: n }, (_, i) => ({ value: i, label: editVendorName(m, i) }))
     if (d.vendor === n) vendors.push({ value: n, label: s.brand })
-    select('vendor', str('EDIT_VENDOR'), d.vendor, vendors)
+    select('vendor', str('EDIT_VENDOR'), d.vendor, false, vendors)
 
     number('remaining', str('FIELD_REMAINING_LABEL'), d.remainingG, 0, 10000, 1, str('FIELD_WEIGHT_UNIT'))
     number('initial', str('FIELD_INITIAL_LABEL'), d.initialG, 1, 10000, 1, str('FIELD_WEIGHT_UNIT'))
     number('pa', str('EDIT_PA'), d.paX1000 / 1000, 0, 2, 0.001, '')
+    return fields
+}
+
+/** The edit line with every field at what the form starts from: the predicate's
+ *  dry run of the action (it never reads as a change, see actionsCheck). */
+function editResolved(
+    id: string,
+    m: Model,
+    unitIdx: number,
+    bay: number,
+    material: number | null,
+    thenLoad: boolean
+): string {
+    const d = editDefaults(m, unitIdx, bay)
+    const pa = `${Math.trunc(d.paX1000 / 1000)}.${String(d.paX1000 % 1000).padStart(3, '0')}`
+
+    return cut(
+        `spool edit ${id} material=${material ?? d.material} color=${d.color} ` +
+            `vendor=${d.vendor} remaining=${d.remainingG} initial=${d.initialG} pa=${pa}` +
+            (thenLoad ? ' then load' : ''),
+        ACTION_LINE
+    )
+}
+
+/** "Edit spool": the editor's fields on the bay's own spool. The one line
+ *  carries every field; the mapper sends only the ones the user changed
+ *  (actions.ts, `spool edit`). Dimmed, with its reason, while the host cannot
+ *  take it: no edit endpoint, Spoolman offline or an empty bay. */
+function addEditAction(list: ActionList, m: Model, unitIdx: number, bay: number, id: string): void {
+    const a = list.add(
+        'edit_spool',
+        str('ACTION_EDIT_SPOOL'),
+        `spool edit ${id} material={material} color={color} vendor={vendor} remaining={remaining} initial={initial} pa={pa}`,
+        'normal'
+    )
+    if (!a) return
     /* The one form with a submit button: the row that sends it says "Save edit"
      * (the action it is here for is "Edit spool"), and a submission that changed
      * nothing is the host's own refusal to answer. The other forms carry neither
      * and their renderers behave as before. */
-    a.form = { fields, submit_label: str('ACTION_SAVE_EDIT'), require_change: true }
+    a.form = { fields: editFields(m, unitIdx, bay, false), submit_label: str('ACTION_SAVE_EDIT'), require_change: true }
+    check(a, editResolved(id, m, unitIdx, bay, null, false), m)
+}
 
-    const pa = `${Math.trunc(d.paX1000 / 1000)}.${String(d.paX1000 % 1000).padStart(3, '0')}`
-    check(
-        a,
-        cut(
-            `spool edit ${id} material=${d.material} color=${d.color} vendor=${d.vendor} remaining=${d.remainingG} initial=${d.initialG} pa=${pa}`,
-            ACTION_LINE
-        ),
-        m
+/** "Load" on a bay nobody has identified: the same spool editor, one choice
+ *  further. The form asks who is before it asks for anything else - Klipper's
+ *  preload table is worth nothing to a bay whose material is still "?" - and
+ *  the line that leaves it saves that answer and loads in one go, so the load
+ *  the user came for happens instead of being handed back to them. */
+function addSaveAndLoadAction(list: ActionList, m: Model, unitIdx: number, bay: number, id: string): void {
+    const a = list.add(
+        'load',
+        str('ACTION_LOAD'),
+        'spool edit ' +
+            id +
+            ' material={material} color={color} vendor={vendor} remaining={remaining} initial={initial} pa={pa} then load',
+        'normal'
     )
+    if (!a) return
+    /* The row that sends it says what it will do, not what it is called: a
+     * "Load" row whose dialog offers "Save and load". */
+    a.form = { fields: editFields(m, unitIdx, bay, true), submit_label: str('SAVE_AND_LOAD'), require_change: true }
+    // The row is dimmed only while the edit cannot be taken at all (no endpoint,
+    // Spoolman offline), with the reason Edit spool gives. The unanswered material
+    // is not that: it is the dialog's own required field, and dimming the row for
+    // it would hide the dialog that asks. So the dry run is the editor's, with a
+    // material that is an answer.
+    check(a, editResolved(id, m, unitIdx, bay, editDefaults(m, unitIdx, bay).material === 0 ? 1 : 0, true), m)
+    // ... and then the load itself has its own rules (a bay in no tool, a busy
+    // lane): what would refuse the plain Load refuses this one, in its words, so
+    // no spool is saved for a load that cannot follow it
+    if (a.enabled) check(a, `load ${id}`, m)
 }
 
 /** The choice the form opens on: the bay's own group, so submitting it
@@ -548,6 +629,7 @@ function addChangeGroupAction(list: ActionList, m: Model, unitIdx: number, bay: 
                 step: 0,
                 unit: '',
                 options,
+                required: false,
             },
         ],
         submit_label: str('ACTION_CHANGE_GROUP'),
@@ -576,7 +658,9 @@ function tileActions(m: Model, unitIdx: number, bay: number): ViewAction[] {
     const id = cut(slotId(m, unitIdx, bay), ID)
     const list = new ActionList()
 
-    simple(list, m, 'load', str('ACTION_LOAD'), 'normal', `load ${id}`)
+    // A bay nobody has identified asks for its spool before it is loaded.
+    if (bayIsUnknown(m, unitIdx, bay)) addSaveAndLoadAction(list, m, unitIdx, bay, id)
+    else simple(list, m, 'load', str('ACTION_LOAD'), 'normal', `load ${id}`)
     // The bay's own unload line: the mapper resolves it to the unit's lane, and
     // only a loaded bay passes its predicate.
     const unload = simple(list, m, 'unload', str('ACTION_UNLOAD'), 'normal', `unload ${id}`)
@@ -614,6 +698,7 @@ function tileActions(m: Model, unitIdx: number, bay: number): ViewAction[] {
                         step: 0,
                         unit: '',
                         options,
+                        required: false,
                     },
                 ],
                 submit_label: null,
@@ -684,6 +769,7 @@ function unitActions(m: Model, unitIdx: number): ViewAction[] {
                     max: tmax,
                     step: 5,
                     unit: str('FIELD_TARGET_UNIT'),
+                    required: false,
                 },
                 {
                     id: 'hours',
@@ -694,6 +780,7 @@ function unitActions(m: Model, unitIdx: number): ViewAction[] {
                     max: 24,
                     step: 1,
                     unit: str('FIELD_HOURS_UNIT'),
+                    required: false,
                 },
             ],
             submit_label: null,
@@ -729,6 +816,7 @@ const unitTitle = (u: Unit): string => u.title || variantName(u.variant)
 
 function buildUnit(m: Model, unitIdx: number): ViewUnit {
     const u = m.units[unitIdx]
+    const unitAlert = scanAlerts(m, unitIdx, -1)
 
     // A missing source is unknown, never a possibly wrong value: an offline unit
     // shows "Offline" in place of its reading, and has no dryer pill.
@@ -757,7 +845,8 @@ function buildUnit(m: Model, unitIdx: number): ViewUnit {
         status_text: u.connected ? '' : str('UNIT_OFFLINE'),
         env,
         dryer,
-        alert: scanAlerts(m, unitIdx, -1),
+        alert: unitAlert,
+        alert_clear: unitScopeClear(m, unitIdx, unitAlert),
         // serial and firmware: no real-host field carries these yet, so they are
         // left blank rather than invented.
         info: { serial: '', firmware: '', family: unitTitle(u) },
@@ -988,6 +1077,30 @@ function historyItem(m: Model, a: Alert): ViewAlert {
  *   already shows the same text. Low filament (a unit's entry) is the tile's
  *   low ring, and a lane fault's own history entry is never shown again.
  */
+/** Whether nothing in a unit's scope alerts, shown or not (unit_scope_clear() in view.c). */
+function unitScopeClear(m: Model, unitIdx: number, group: ViewAlertGroup | null): boolean {
+    const u = m.units[unitIdx]
+    const th = m.toolheads[u.toolhead]
+    if (group) return false
+    if (th && th.hasError && th.errorUnit === unitIdx) return false
+    if (th && th.runoutActive && th.runoutFromUnit === unitIdx) return false
+    if (u.slots.some((s) => s.state === SlotState.ERROR)) return false
+    return !m.alerts.some((a) => !a.laneFault && a.unread && a.unit === unitIdx)
+}
+
+/** The same for a toolhead (toolhead_scope_clear() in view.c). */
+function toolheadScopeClear(
+    m: Model,
+    thIdx: number,
+    th: Toolhead,
+    group: ViewAlertGroup | null,
+    message: ViewToolhead['message']
+): boolean {
+    if (group || th.hasError || th.runoutActive) return false
+    if (message.tone !== 'neutral') return false
+    return !m.alerts.some((a) => !a.laneFault && a.unread && a.unit < 0 && a.toolhead === thIdx)
+}
+
 function scanAlerts(m: Model, unitIdx: number, thIdx: number): ViewAlertGroup | null {
     const u = unitIdx >= 0 ? m.units[unitIdx] : undefined
     const th = u ? m.toolheads[u.toolhead] : m.toolheads[thIdx]
@@ -1182,8 +1295,73 @@ function stepLabels(th: Toolhead): string[] {
     return steps
 }
 
+/** The tools a toolhead could load right now: the group names, in group order,
+ *  with at least one ready bay on one of its connected units. Whole names
+ *  only: a name that no longer fits stops the list (ready_tools() in view.c). */
+function readyTools(m: Model, thIdx: number): string {
+    const sep = str('REST_JOIN')
+    let out = ''
+    for (const g of m.groups) {
+        const ready = g.members.some((mem) => {
+            const un = m.units[mem.unit]
+            return (
+                un !== undefined &&
+                un.toolhead === thIdx &&
+                un.connected &&
+                mem.slot >= 0 &&
+                mem.slot < un.slots.length &&
+                un.slots[mem.slot].state === SlotState.READY
+            )
+        })
+        if (!ready) continue
+        const add = out ? sep + g.name : g.name
+        if (new TextEncoder().encode(out + add).length >= 96) break // the C buffer's size, in bytes
+        out += add
+    }
+    return out
+}
+
+/** Nothing is loaded: what could be ("Ready: T0 · T1"), or the next step when
+ *  no bay is ready (build_rest_empty() in view.c). */
+function restEmpty(m: Model, thIdx: number): string {
+    const tools = readyTools(m, thIdx)
+    return tools ? cut(format('REST_READY', { tools }, REST_PATH), REST_PATH) : str('REST_INSERT')
+}
+
+/** What the stepper's slot rests on while no plan runs (PRINCIPLES.md 2, "A
+ *  reserved slot has a resting state"): the toolhead's own path. A bay feeding
+ *  it names the tool, the bay and the material and carries the filament's own
+ *  color - the one the hotend icon tints with; nothing from a bay rests as
+ *  REST_READY or REST_INSERT with no color. An external spool (loadedExt >= 0) has no bay to
+ *  name, so its path rests empty too, as in build_activity_rest() in view.c. */
+function activityRest(m: Model, th: Toolhead, thIdx: number): ViewToolhead['activity']['rest'] {
+    if (!th.loaded || th.loadedExt >= 0 || th.loadedUnit < 0 || th.loadedUnit >= m.units.length) {
+        return { label: restEmpty(m, thIdx), color: null, loaded: false }
+    }
+    const unit = m.units[th.loadedUnit]
+    if (th.loadedSlot < 0 || th.loadedSlot >= unit.slots.length) {
+        return { label: restEmpty(m, thIdx), color: null, loaded: false }
+    }
+    const slot = unit.slots[th.loadedSlot]
+    // The tool label is the one the hotend icon overlays: the group's name, or
+    // "?" for a bay in no group.
+    const gi = slotGroup(m, th.loadedUnit, th.loadedSlot)
+    const tool = gi >= 0 ? m.groups[gi].name : str('UNKNOWN_MARK')
+    const spool = fmtSpoolLabel(th.loadedSlot, SUBLABEL)
+    const label = slot.material
+        ? format('REST_PATH', { tool, spool, material: slot.material }, REST_PATH)
+        : format('REST_PATH_NO_MATERIAL', { tool, spool }, REST_PATH)
+    return {
+        label: cut(label, REST_PATH),
+        color: slot.colorKnown ? hex(slot.color) : null,
+        loaded: true,
+    }
+}
+
 function buildToolhead(m: Model, index: number): ViewToolhead {
     const th = m.toolheads[index]
+    const thAlert = scanAlerts(m, -1, index)
+    const message = buildMessage(m, th)
     const activityKind: ViewToolhead['activity']['kind'] = th.hasError
         ? 'error'
         : th.runoutActive
@@ -1238,9 +1416,13 @@ function buildToolhead(m: Model, index: number): ViewToolhead {
             steps: stepLabels(th),
             index: th.stepCurrent,
             failed: th.stepFailed,
+            // No plan running, so the slot rests on the path instead. The two are
+            // never both present.
+            rest: th.steps.length === 0 ? activityRest(m, th, index) : null,
         },
-        message: buildMessage(m, th),
-        alert: scanAlerts(m, -1, index),
+        message,
+        alert: thAlert,
+        alert_clear: toolheadScopeClear(m, index, th, thAlert, message),
         actions: toolheadActions(m, th),
         units: m.units.flatMap((u, i) => (u.toolhead === index ? [buildUnit(m, i)] : [])),
     }

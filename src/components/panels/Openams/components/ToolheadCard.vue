@@ -12,11 +12,13 @@
                 </div>
             </div>
             <pressure-bar :pressure="toolhead.pressure" />
-            <div class="fps-alert"><alert-badge :group="toolhead.alert" :labels="labels" /></div>
+            <div class="fps-alert">
+                <alert-badge :group="toolhead.alert" :clear="toolhead.alert_clear" :labels="labels" />
+            </div>
         </div>
         <div class="status" role="status">
             <div class="status-steps">
-                <stepper v-if="hasSteps" :activity="toolhead.activity" :label="toolhead.message.text" />
+                <stepper v-if="hasStepsOrRest" :activity="toolhead.activity" :label="toolhead.message.text" />
             </div>
             <message-row :message="toolhead.message" />
         </div>
@@ -65,6 +67,13 @@ export default class ToolheadCard extends Vue {
     get hasSteps(): boolean {
         return this.toolhead.activity.steps.length > 0
     }
+
+    /** The slot never sits empty: with a plan it shows the steps, and with no
+     *  plan the core's resting path (PRINCIPLES.md 2). Either way the same
+     *  rows, so its height is the same. */
+    get hasStepsOrRest(): boolean {
+        return this.hasSteps || this.toolhead.activity.rest !== null
+    }
 }
 </script>
 
@@ -94,7 +103,14 @@ export default class ToolheadCard extends Vue {
     margin: 0 6px 12px;
 }
 
+.fps-title {
+    grid-column: 1;
+}
+
+/* The alert's own column whether or not a pressure reading fills the middle
+   one: the three zones stay where they are (principle 2). */
 .fps-alert {
+    grid-column: 3;
     justify-self: end;
     align-self: start;
 
@@ -203,11 +219,13 @@ export default class ToolheadCard extends Vue {
 }
 
 @container steps (max-width: 900px) {
-    ::v-deep .step span {
+    ::v-deep .step:not(.rest) span {
         display: none;
     }
 
-    ::v-deep .step-name {
+    /* The resting path keeps its one label at every width (it is the only text
+     * there is), and the narrow-width current-step row has nothing to name. */
+    ::v-deep .stepper-wrap:not(.atrest) .step-name {
         display: block;
     }
 

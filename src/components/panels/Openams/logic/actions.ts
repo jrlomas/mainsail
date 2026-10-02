@@ -485,19 +485,31 @@ export function actionsMap(line: string, m: Model, capacity = 512): Mapped {
 }
 
 /** What the RPC mapper says about a line: a call, a refusal with its reason, or
- *  "not mine" (actions_rpc_why's +1, -1 and 0). */
-type RpcMapped = { rc: 1; method: string; params: Record<string, unknown> } | { rc: -1; why: string } | { rc: 0 }
+ *  "not mine" (actions_rpc_why's +1, -1 and 0). `then` is the line the caller
+ *  sends once the host has taken the call, and only then. */
+type RpcMapped =
+    { rc: 1; method: string; params: Record<string, unknown>; then?: string } | { rc: -1; why: string } | { rc: 0 }
 
-/** One `key=value` token of a `spool edit` line; null at the end or for a
- *  token that is not of that shape. */
-function editTokens(text: string): [string, string][] | null {
-    const out: [string, string][] = []
-    for (const token of text.split(' ').filter((t) => t.length > 0)) {
-        const eq = token.indexOf('=')
-        if (eq <= 0 || eq === token.length - 1 || eq > 15 || token.length - eq - 1 > 23) return null
-        out.push([token.slice(0, eq), token.slice(eq + 1)])
+/** The `key=value` tokens at the head of a `spool edit` line's fields, and the
+ *  text that follows them. actions_map.c's edit_token stops at the first token
+ *  of another shape, and only `then load` may follow; null for a head that
+ *  breaks the shape. */
+function editTokens(text: string): { tokens: [string, string][]; tail: string } | null {
+    const words = text.split(' ').filter((w) => w.length > 0)
+    const shaped = (w: string): boolean => {
+        const eq = w.indexOf('=')
+
+        return eq > 0 && eq !== w.length - 1 && eq <= 15 && w.length - eq - 1 <= 23
     }
-    return out
+    let n = 0
+
+    while (n < words.length && shaped(words[n])) n++
+    return {
+        tokens: words
+            .slice(0, n)
+            .map((w) => [w.slice(0, w.indexOf('=')), w.slice(w.indexOf('=') + 1)] as [string, string]),
+        tail: words.slice(n).join(' '),
+    }
 }
 
 const EDIT_INT = /^[+-]?\d+$/
@@ -519,15 +531,21 @@ function editMilli(text: string): number | null {
 }
 
 /** `spool edit <slot> [material=<n>] [color=<rgb>] [vendor=<n>] [remaining=<g>]
- *  [initial=<g>] [pa=<x>]` -> server.openams_spoolman.edit (actions_map.c's
- *  spool_edit). The selects' values are the form's own: material and vendor are
- *  indices into the lists the edit form offers (an index one past the list is
- *  the bay's own), color is 0xRRGGBB as a decimal number or -1 for "none", the
- *  weights are grams and pa is the pressure advance itself. A key left out is a
- *  field left as it is, and so is one equal to what the form starts from
- *  (editDefaults): only a change is sent. The line never carries a vendor's
- *  name, only its index, so it has one shape for both renderers and needs no
- *  quoting. */
+ *  [initial=<g>] [pa=<x>] [then load]` -> server.openams_spoolman.edit
+ *  (actions_map.c's spool_edit). The selects' values are the form's own:
+ *  material and vendor are indices into the lists the edit form offers (an
+ *  index one past the list is the bay's own), color is 0xRRGGBB as a decimal
+ *  number or -1 for "none", the weights are grams and pa is the pressure
+ *  advance itself. A key left out is a field left as it is, and so is one equal
+ *  to what the form starts from (editDefaults): only a change is sent. The
+ *  line never carries a vendor's name, only its index, so it has one shape for
+ *  both renderers and needs no quoting.
+ *
+ *  ` then load` is the one thing that may follow: the line a "Load" on an
+ *  unidentified bay sends, which saves what the user chose and loads in one go.
+ *  It comes back as `then`, for the caller to send once the host has taken the
+ *  edit. A material of -1 is that form's unanswered "Choose a material", and is
+ *  refused for that, in its own words. */
 function spoolEdit(args: string, m: Model): RpcMapped {
     const words = args.replace(/^ +/, '')
     const sp = words.indexOf(' ')
@@ -536,8 +554,15 @@ function spoolEdit(args: string, m: Model): RpcMapped {
     const found = slotFind(m, id)
     if (!found) return { rc: 0 }
 
-    const tokens = editTokens(sp < 0 ? '' : words.slice(sp + 1))
-    if (!tokens) return { rc: 0 }
+    const split = editTokens(sp < 0 ? '' : words.slice(sp + 1))
+    if (!split) return { rc: 0 }
+    const tokens = split.tokens
+    let thenLoad = false
+
+    if (split.tail) {
+        if (split.tail !== 'then load') return { rc: 0 }
+        thenLoad = true
+    }
     const given: Record<string, number> = {}
     for (const [key, val] of tokens) {
         if (key === 'pa') {
@@ -559,6 +584,9 @@ function spoolEdit(args: string, m: Model): RpcMapped {
     if (!m.spoolmanOnline) return { rc: -1, why: str('REASON_SPOOLMAN_OFFLINE') }
     const s = m.units[found.unit].slots[found.slot]
     if (s.state === SlotState.EMPTY) return { rc: -1, why: str('REASON_BAY_EMPTY') }
+    if (thenLoad && has('material') && given.material === -1) {
+        return { rc: -1, why: str('MATERIAL_CHOOSE') }
+    }
 
     const d = editDefaults(m, found.unit, found.slot)
     const create = s.spoolId < 0
@@ -614,7 +642,11 @@ function spoolEdit(args: string, m: Model): RpcMapped {
 
     // the unit and bay alone are no edit; a new spool is
     if (!create && Object.keys(params).length <= 2) return { rc: -1, why: str('EDIT_NO_CHANGES') }
-    return { rc: 1, method: 'server.openams_spoolman.edit', params }
+    // what the caller sends once the host has taken this: the load ` then load`
+    // asked for, and nothing at all without it.
+    return thenLoad
+        ? { rc: 1, method: 'server.openams_spoolman.edit', params, then: `load ${id}` }
+        : { rc: 1, method: 'server.openams_spoolman.edit', params }
 }
 
 /** The RPC vocabulary: `spool list`, `vendor list`, `spool edit <slot> key=value
@@ -742,7 +774,13 @@ export function coreAction(m: Model, line: string, form: Record<string, unknown>
     if (mapped.rc === -1) return { kind: 'error', reason: mapped.why }
 
     const rpc = actionsRpcMapped(filled.line, m)
-    if (rpc.rc === 1) return { kind: 'rpc', method: rpc.method, params: rpc.params }
+    if (rpc.rc === 1) {
+        // `then` is what the host's answer releases, not the call itself: it goes
+        // with the result so the caller can hold it back until then.
+        return rpc.then
+            ? { kind: 'rpc', method: rpc.method, params: rpc.params, then: rpc.then }
+            : { kind: 'rpc', method: rpc.method, params: rpc.params }
+    }
     if (rpc.rc === -1) return { kind: 'error', reason: rpc.why }
     return { kind: 'local' }
 }

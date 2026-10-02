@@ -7,7 +7,7 @@
         :style="lanes">
         <div class="mmu-head">
             <h3>{{ unit.title }}</h3>
-            <div class="mmu-alert"><alert-badge :group="unit.alert" :labels="labels" /></div>
+            <div class="mmu-alert"><alert-badge :group="unit.alert" :clear="unit.alert_clear" :labels="labels" /></div>
             <div class="sub">{{ unit.subtitle }}</div>
             <div class="climate">
                 <div v-if="unit.status_text" class="pill offline-pill">{{ unit.status_text }}</div>

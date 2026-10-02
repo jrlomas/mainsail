@@ -109,12 +109,17 @@ export default class ActionDialog extends Vue {
     /** A form that asks for a change is not worth sending without one: the
      *  button stays dead until a field differs from the value it opened with,
      *  and goes dead again when it is put back. A form the core does not ask
-     *  that of is always live, as it was. */
+     *  that of is always live, as it was.
+     *
+     *  A field the core marks required has no answer at all yet - "Choose a
+     *  material" on an unidentified bay - and there is nothing to send until it
+     *  holds one, whatever `require_change` says. */
     get submitOff(): boolean {
         const d = this.dialog
         const form = d?.mode === 'form' ? d.action.form : null
-        if (!form || !formExtras(form).require_change) return false
-        return !changed(form, d!.values)
+        if (!form) return false
+        if (formExtras(form).require_change && !changed(form, d!.values)) return true
+        return form.fields.some((f) => f.required && Number(d!.values[f.id]) < 0)
     }
 
     get cancelLabel(): string {

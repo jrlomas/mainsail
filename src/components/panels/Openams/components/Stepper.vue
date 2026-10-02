@@ -1,6 +1,10 @@
 <template>
-    <div class="stepper-wrap">
+    <div class="stepper-wrap" :class="{ atrest: !!rest }">
         <ol class="stepper" :class="`kind-${activity.kind}`" :aria-label="label">
+            <li v-if="rest" class="step rest">
+                <i :style="restStyle"></i>
+                <span>{{ rest.label }}</span>
+            </li>
             <li
                 v-for="(name, i) in activity.steps"
                 :key="i"
@@ -22,17 +26,34 @@ import type { ViewToolhead } from '../logic/index'
 /** The stepper: labeled steps, the current one pulsing, a failed one red.
  *  Its row is always reserved, so the status area never changes height.
  *  Narrow (a container query, in ToolheadCard) the segments stay and one
- *  full-width label names the current or failed step. */
+ *  full-width label names the current or failed step.
+ *
+ *  With no plan running the slot rests on the toolhead's own path instead (the
+ *  core's `activity.rest`): one full-width segment in the loaded filament's
+ *  own color - or the neutral track above when no color is known - labeled
+ *  with what it is, in the step's own label style. Same rows either way, so
+ *  the slot's height never changes (PRINCIPLES.md 2). */
 @Component
 export default class Stepper extends Vue {
     @Prop({ required: true }) readonly activity!: ViewToolhead['activity']
     @Prop({ required: true }) readonly label!: string
+
+    get rest(): ViewToolhead['activity']['rest'] {
+        return this.activity.steps.length ? null : this.activity.rest
+    }
+
+    /** The resting segment's own color, or nothing at all so the neutral track
+     *  shows through when no filament color is known. */
+    get restStyle(): Record<string, string> {
+        return this.rest?.color ? { background: this.rest.color } : {}
+    }
 
     get isFailed(): boolean {
         return this.activity.failed >= 0
     }
 
     get currentLabel(): string {
+        if (this.rest) return ''
         const at = this.isFailed ? this.activity.failed : this.activity.index
         return at >= 0 ? this.activity.steps[at] : ''
     }

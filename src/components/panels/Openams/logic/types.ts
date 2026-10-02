@@ -35,6 +35,10 @@ export interface ViewField {
     unit: string
     /** Only on a `select` field. */
     options?: ViewFieldOption[]
+    /** The field asks something only the person knows (an unidentified bay's
+     *  "Choose a material"), so a form that carries one has nothing to send
+     *  until it holds an answer. */
+    required: boolean
 }
 
 export interface ViewForm {
@@ -113,6 +117,8 @@ export interface ViewUnit {
     } | null
     /** The unit's own alerts (its lane fault, the dryer's), or null. */
     alert: ViewAlertGroup | null
+    /** True only when nothing in this scope alerts at all, shown elsewhere or not: the slot rests on a check. */
+    alert_clear: boolean
     info: { serial: string; firmware: string; family: string } | null
     actions: ViewAction[]
     bays: ViewTile[]
@@ -181,11 +187,23 @@ export interface ViewToolhead {
         steps: string[]
         index: number
         failed: number
+        /** What the slot rests on while no plan runs (PRINCIPLES.md 2): the
+         *  toolhead's own path. Null whenever `steps` is not empty, so the stepper
+         *  and the rest never both speak. */
+        rest: {
+            label: string
+            /** "#rrggbb", or null when the color is unknown (nothing loaded, or a
+             *  spool nobody told us the color of). */
+            color: string | null
+            loaded: boolean
+        } | null
     }
     /** The one status line (an error, a runout, a notice or the plain status). */
     message: { text: string; tone: Tone }
     /** The lane fault(s) that name no unit, or null. */
     alert: ViewAlertGroup | null
+    /** True only when nothing in this scope alerts at all, shown elsewhere or not: the slot rests on a check. */
+    alert_clear: boolean
     actions: ViewAction[]
     units: ViewUnit[]
 }
@@ -275,8 +293,11 @@ export interface View {
 export type ActionResult =
     /** G-code lines joined by "\n", for `printer.gcode.script`. */
     | { kind: 'gcode'; script: string }
-    /** A Moonraker JSON-RPC call. */
-    | { kind: 'rpc'; method: string; params: Record<string, unknown> }
+    /** A Moonraker JSON-RPC call, and the line to send once the host has taken
+     *  it (`then`: "load oams11" after a spool edit that ends in "then load").
+     *  The caller sends it, and only then - a refusal has to leave the user
+     *  where they were. */
+    | { kind: 'rpc'; method: string; params: Record<string, unknown>; then?: string }
     /** A host line the model cannot address right now, or a missing form value. */
     | { kind: 'error'; reason: string }
     /** A display-only line: nothing to send. */

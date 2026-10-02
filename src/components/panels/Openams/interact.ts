@@ -88,6 +88,11 @@ export class Interactivity {
      *  a large tree, and Vue must not walk it. */
     private current: View | null = null
     private flashTimer = 0
+    /** What the host's answer to a call releases, by the line that asked for
+     *  it: `load <slot>` after a spool edit that ends in "then load". Held
+     *  outside the reactive state for the same reason as the view: nothing ever
+     *  draws it. */
+    private followups: Record<string, string> = {}
 
     private readonly state = new Vue({
         data: {
@@ -196,6 +201,9 @@ export class Interactivity {
             this.flash(result.reason, 'error')
             return
         }
+        // A call that names what follows it: nothing is sent until the host
+        // says it took the call.
+        if (result.kind === 'rpc' && result.then) this.followups[action.line] = result.then
         this.press(action)
     }
 
@@ -207,18 +215,36 @@ export class Interactivity {
      *  A refusal that arrives after the wait has already ended is the outcome
      *  of a run that had already started - a load's script is answered only
      *  once it has run, which can be minutes. The printer's own status says
-     *  it then, so the panel says nothing; the ESP32 follows the same rule. */
+     *  it then, so the panel says nothing; the ESP32 follows the same rule. The
+     *  follow-up is not one of those: the host did answer, in words, so what it
+     *  asked to follow goes out either way. */
     settle(line: string, message?: string, kind: Refusal = 'edit'): void {
         // A host that answers at once does so before the press is recorded (run()
         // calls the runner first), so the settling waits for the end of the click.
         queueMicrotask(() => {
             const waited = this.pending[line] !== undefined
             this.release(line)
+            const then = this.followups[line]
+            delete this.followups[line]
+            // The host took the call, so the load it asked for follows now,
+            // through the same path any action line takes: the job the user came
+            // for happens instead of being handed back to them (principle 13).
+            if (then && !message) this.send(then)
             if (!message || !waited) return
             const labels = this.current?.labels
             const lead = kind === 'action' ? labels?.action_refused : labels?.edit_failed
             this.flash(lead ? `${lead} ${message}` : message, 'error')
         })
+    }
+
+    /** One line on its own, with no action of its own behind it: a follow-up the
+     *  host's answer released. The panel's own runner, so it resolves and is
+     *  emitted exactly as any other line is. */
+    private send(line: string): void {
+        const result = this.runner(line, null)
+
+        if (!result || result.kind === 'local') return
+        if (result.kind === 'error') this.flash(result.reason, 'error')
     }
 
     /** Say something for a while: a core's reason, a dimmed action's, or the
@@ -262,6 +288,7 @@ export class Interactivity {
     /** The panel is going away: nothing may fire after it. */
     dispose(): void {
         for (const line of Object.keys(this.state.pending)) this.release(line)
+        this.followups = {}
         window.clearTimeout(this.flashTimer)
         this.state.message = ''
         this.state.dialog = null
