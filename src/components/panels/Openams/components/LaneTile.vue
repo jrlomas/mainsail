@@ -4,7 +4,7 @@
             <button
                 type="button"
                 class="lane-hit"
-                :aria-label="tileAction"
+                :aria-label="spoolName"
                 :aria-haspopup="'dialog'"
                 :popovertarget="tileAnchor"
                 data-target="tile"
@@ -41,7 +41,7 @@
                     class="ring-hit"
                     :aria-label="spoolName"
                     :aria-haspopup="'dialog'"
-                    :popovertarget="ringAnchor"
+                    :popovertarget="tileAnchor"
                     data-target="ring"
                     data-popover-invoker="ring"></button>
                 <button
@@ -55,13 +55,12 @@
                     data-popover-invoker="tag"
                     :title="tagTitle"></button>
             </div>
-            <action-popover :anchor-id="ringAnchor" :heading="spoolName" :actions="actions('ring')" name="ring" />
             <action-popover v-if="tile.tag" :anchor-id="tagAnchor" :heading="tile.tag.text" name="tag">
                 <p class="tag-detail">{{ tile.tag.detail }}</p>
                 <p v-if="tile.tag.code" class="tag-code">{{ tile.tag.code }}</p>
                 <action-row v-for="(action, i) in actions('tag')" :key="'t' + i" :action="action" />
             </action-popover>
-            <action-popover :anchor-id="tileAnchor" :heading="spoolName" :actions="actions('tile')" name="tile" />
+            <action-popover :anchor-id="tileAnchor" :heading="spoolName" :actions="menu" name="tile" />
         </article>
     </li>
 </template>
@@ -82,10 +81,11 @@ import { newAnchor } from '../popover'
  *  with its tag. Every string is the core's. The state drives the CSS classes
  *  and nothing else, so a new state needs no code here.
  *
- *  The click targets of a tile (UNIFIED_UI.md 4b) are the whole tile, the
- *  ring and the tag, each opening the actions the core marked for it, and the
- *  tool pill (`T0 ∞n`), which changes the bay's group: the pill is where the
- *  group is shown, so it is where it is changed. */
+ *  The click targets of a tile (UNIFIED_UI.md 4b): the tile and the ring's
+ *  row open one menu (the actions the core marked 'tile' or 'ring'); the tag
+ *  opens its own details and recovery; the tool pill (`T0 ∞n`) changes the
+ *  bay's group directly: the pill is where the group is shown, so it is where
+ *  it is changed. */
 @Component({ components: { ActionPopover, ActionRow, RfidIcon, Ring, SpareBadge, StatusTag } })
 export default class LaneTile extends Vue {
     @Prop({ required: true }) readonly tile!: ViewTile
@@ -93,16 +93,15 @@ export default class LaneTile extends Vue {
 
     /** One anchor per target: the ids are unique per page, so two panels
      *  mounted at once never fight over the same popover. */
-    readonly ringAnchor = newAnchor()
     readonly tagAnchor = newAnchor()
     readonly tileAnchor = newAnchor()
 
-    /** The bay's own "Change group..." (it also stays in the ring's list). */
+    /** The bay's own "Change group..." (it is in the tile's menu too). */
     get changeGroup(): ViewAction | undefined {
         return this.tile.actions.find((a) => a.id === 'change_group')
     }
 
-    /** The pill's click: the bay's own change-group, as the ring's row does. */
+    /** The pill's click: the bay's own change-group, as the tile's menu does. */
     openGroup(): void {
         if (this.changeGroup) this.ctrl.ask(this.changeGroup)
     }
@@ -128,17 +127,17 @@ export default class LaneTile extends Vue {
         return !!(this.tile.color || (this.tile.gradient_top && this.tile.gradient_bottom))
     }
 
-    /** The bay's own name, the core's word for it: the popover headings, and
-     *  the ring's accessible name. */
+    /** The bay's own name, the core's word for it: the menu's heading, and the
+     *  accessible name of the tile and of the ring's row (both open the menu). */
     get spoolName(): string {
         return this.tile.sublabel ?? this.tile.label
     }
 
-    /** The verb on the tile itself, so a click is predictable from what is
-     *  visible: the loaded outline means a click unloads (principle 10). */
-    get tileAction(): string {
-        const own = this.actions('tile')
-        return (own.find((a) => a.enabled) ?? own[0])?.label ?? this.spoolName
+    /** The tile's one menu: every action the core marked for the tile or the
+     *  ring, in the core's own order. The tag's actions stay in the tag's
+     *  popover, and the pill opens change-group directly. */
+    get menu(): ViewAction[] {
+        return this.tile.actions.filter((a) => a.target === 'tile' || a.target === 'ring')
     }
 
     get tagTitle(): string {
@@ -281,8 +280,8 @@ export default class LaneTile extends Vue {
     }
 }
 
-/* ---- the three click targets of a tile (UNIFIED_UI.md 4b): the whole tile,
-   the ring, and the tag. Each is an empty button laid over what it acts on
+/* ---- the click targets of a tile (UNIFIED_UI.md 4b): the whole tile and the
+   ring's row (one menu), and the tag. Each is an empty button laid over what it acts on
    rather than a wrapper around it, so the tile paints exactly as it was
    approved, and each says it is there on hover and on press (principle 10). ---- */
 

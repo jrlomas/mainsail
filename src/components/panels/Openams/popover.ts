@@ -23,9 +23,21 @@ const MIN_WIDTH = 190
  *  per page, so two panels mounted at once never claim the same one. */
 export const newAnchor = (): string => `oams-pop-${++seq}`
 
-/** The control that opens `id`, wherever it sits in the page. */
+/** The control that last opened a popover, by popover id: a popover may have
+ *  more than one invoker (a tile's menu opens from the tile and from its
+ *  ring's row), and it sits under the one that was used. */
+const used = new Map<string, HTMLElement>()
+
+/** Every control that opens `id`. */
+export function findInvokers(id: string): HTMLElement[] {
+    return Array.from(document.querySelectorAll<HTMLElement>(`[popovertarget="${id}"]`))
+}
+
+/** The control that opens `id`: the one last used, else the first. */
 export function findInvoker(id: string): HTMLElement | null {
-    return document.querySelector<HTMLElement>(`[popovertarget="${id}"]`)
+    const last = used.get(id)
+    if (last?.isConnected && last.getAttribute('popovertarget') === id) return last
+    return findInvokers(id)[0] ?? null
 }
 
 /** Close the popover `node` sits in, if any: a dialog is the top layer, and a
@@ -73,6 +85,16 @@ let watching = false
 export function followAnchors(): void {
     if (watching || typeof window === 'undefined') return
     watching = true
+    // Remember which invoker was pressed (a keyboard press is a click too).
+    document.addEventListener(
+        'click',
+        (e) => {
+            const el = (e.target as Element | null)?.closest<HTMLElement>('[popovertarget]')
+            const id = el?.getAttribute('popovertarget')
+            if (el && id) used.set(id, el)
+        },
+        true
+    )
     const placeAll = () => {
         for (const pop of document.querySelectorAll<HTMLElement>('[popover]:popover-open')) {
             place(pop, findInvoker(pop.id))

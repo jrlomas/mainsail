@@ -201,18 +201,28 @@ export function actionSent(m: Model, kind: ActionKind): void {
     if (kind === ActionKind.OTHER) return
     m.actionPendingKind = kind
     m.actionPendingSeq = (m.actionPendingSeq + 1) & 0xff
+    m.actionStartedKind = ActionKind.OTHER
 }
 
 /** The host's answer to an action of that kind: `message` is its own words
  *  when it refused, "" when it took the action. The C's
  *  mmu_model_action_result(). */
 export function actionResult(m: Model, kind: ActionKind, ok: boolean, message: string): void {
+    // The host showed this one running before it answered. A G-code script is
+    // answered only once it has run, so a failure now is the run's own outcome,
+    // which the host's status already shows, or the display giving up the wait
+    // (a timeout, a dropped link): never a refusal to start.
+    if (kind !== ActionKind.OTHER && kind === m.actionStartedKind) {
+        m.actionStartedKind = ActionKind.OTHER
+        if (!ok) return
+    }
     m.actionRefusal = ok ? '' : cut(message ?? '', REFUSAL_LEN)
     m.actionRefusalKind = kind
     m.actionSeq = (m.actionSeq + 1) & 0xff
-    // The host has spoken about this one, so it is no longer a load the load
-    // screen is waiting on.
-    if (!ok && kind === m.actionPendingKind) m.actionPendingKind = ActionKind.OTHER
+    // The host has answered this one, so it is no longer a load the load screen
+    // is waiting to hear about - taken or refused: a G-code script is answered
+    // once it has run, so a taken unload is already over.
+    if (kind === m.actionPendingKind) m.actionPendingKind = ActionKind.OTHER
 }
 
 export interface Model {
@@ -240,12 +250,15 @@ export interface Model {
      *  `actionRefusal` is its own words when it refused, "" when it took the
      *  action, and `actionSeq` moves with every answer so it is said once.
      *  `actionPendingKind` is a load or an unload the host has not reported
-     *  yet, and `actionPendingSeq` moves with each new one. */
+     *  yet, and `actionPendingSeq` moves with each new one. `actionStartedKind`
+     *  is one the host reported running before it answered: a failure answer
+     *  to it is the run's outcome, never a refusal to start. */
     actionRefusal: string
     actionRefusalKind: ActionKind
     actionSeq: number
     actionPendingKind: ActionKind
     actionPendingSeq: number
+    actionStartedKind: ActionKind
     busy: number
     busyUnit: number
     /** The rest of that mirror, as far as the group-edit rules read it: the
@@ -316,6 +329,7 @@ export function newModel(): Model {
         actionSeq: 0,
         actionPendingKind: ActionKind.OTHER,
         actionPendingSeq: 0,
+        actionStartedKind: ActionKind.OTHER,
         busy: Busy.NONE,
         busyUnit: -1,
         printing: false,
@@ -653,6 +667,13 @@ export function refreshThis(m: Model): void {
     m.loaded = th.loaded
     m.busy = th.busy
     m.busyUnit = th.busyUnit
+    // The host reports the operation: what the display sent is no longer
+    // pending but running, which is what a later answer is read against (the
+    // C's mmu_model_refresh_this()).
+    if (m.busy !== Busy.NONE && m.actionPendingKind !== ActionKind.OTHER) {
+        m.actionStartedKind = m.actionPendingKind
+        m.actionPendingKind = ActionKind.OTHER
+    }
     m.currentGroup = th.currentGroup
     m.runoutActive = th.runoutActive
 }

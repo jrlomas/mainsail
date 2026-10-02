@@ -12,7 +12,7 @@
 import { Component, Prop, Vue } from 'vue-property-decorator'
 import type { ViewAction } from '../logic/index'
 import ActionRow from './ActionRow.vue'
-import { findInvoker, followAnchors, place, prePlace } from '../popover'
+import { findInvoker, findInvokers, followAnchors, place, prePlace } from '../popover'
 
 /** An action list (docs/design/UNIFIED_UI.md 7: an ActionSheet is a popover
  *  anchored to its source). A native `popover` gives the top layer, the light
@@ -36,9 +36,8 @@ export default class ActionPopover extends Vue {
         })
         pop.addEventListener('toggle', (e) => {
             const open = (e as ToggleEvent).newState === 'open'
-            const invoker = findInvoker(this.anchorId)
             // A button that opens something says whether it is open.
-            invoker?.setAttribute('aria-expanded', String(open))
+            for (const invoker of findInvokers(this.anchorId)) invoker.setAttribute('aria-expanded', String(open))
             // The popover has no box of its own until the browser has laid it
             // out, and the frame after that is when it is painted: measure in
             // the frame, so the flip and the edge clamp are right first time.
