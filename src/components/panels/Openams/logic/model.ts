@@ -158,6 +158,8 @@ export interface Alert {
     toolhead: number // the toolhead it is about; -1 = none
     laneFault: boolean // a lane fault's history entry (the live fault is on its toolhead)
     unread: boolean
+    raisedMs: number // the model clock (nowMs) when it was raised, uint32
+    readMs: number // the model clock when it was read
 }
 
 export interface SpoolEntry {
@@ -237,6 +239,8 @@ export interface Model {
     spoolmanOnline: boolean
     /** The component can edit a bay's spool (`edit` in its status). */
     spoolmanEdit: boolean
+    /** The host has a sequence stop (`stop` in the component's status): server.openams.stop. */
+    spoolmanStop: boolean
     /** Spoolman's vendor names, as listed (sorted), each whole. */
     vendors: string[]
 
@@ -272,6 +276,8 @@ export interface Model {
     printing: boolean
     /** Alert history, newest first, at most MAX_ALERTS. */
     alerts: Alert[]
+    /** The model clock in ms, a uint32 (mmu_model_t.now_ms): the logic sets it before every apply and view. */
+    nowMs: number
     /** Alerts queued by a mapping call, drained into the history by drain(). */
     pending: Alert[]
     /** Per-tool filament need of the job, in grams (0 = none). */
@@ -322,6 +328,7 @@ export function newModel(): Model {
         settings: settingsDefaults(),
         spoolmanOnline: false,
         spoolmanEdit: false,
+        spoolmanStop: false,
         vendors: [],
         thisUnit: 0,
         loaded: false,
@@ -339,6 +346,7 @@ export function newModel(): Model {
         currentGroup: -1,
         runoutActive: false,
         alerts: [],
+        nowMs: 0,
         pending: [],
         jobNeedG: new Array<number>(MAX_TOOLS).fill(0),
         printFilename: '',
@@ -601,8 +609,19 @@ export function slotId(m: Model, unit: number, slot: number): string {
 
 /** Push an alert into a history, newest first; a full table drops the oldest. */
 function pushAlert(m: Model, a: Alert): void {
+    a.raisedMs = m.nowMs
+    a.readMs = 0
     m.alerts.unshift(a)
     if (m.alerts.length > MAX_ALERTS) m.alerts.length = MAX_ALERTS
+}
+
+/** Whether a history entry has aged out of a toolhead's badge: read, 2 minutes
+ *  after it was read; never read, 15 minutes after it was raised (UNIFIED_UI
+ *  4g; mmu_alert_badge_expired()). uint32 arithmetic, like the C. */
+export const BADGE_READ_MS = 120000
+export const BADGE_UNREAD_MS = 900000
+export function alertBadgeExpired(m: Model, a: Alert): boolean {
+    return a.unread ? (m.nowMs - a.raisedMs) >>> 0 >= BADGE_UNREAD_MS : (m.nowMs - a.readMs) >>> 0 >= BADGE_READ_MS
 }
 
 /** Queue an alert for the next drain (the C's alert_pending). A full queue
@@ -626,6 +645,8 @@ function queueAlert(
         toolhead: i8(toolhead),
         laneFault,
         unread: true,
+        raisedMs: 0,
+        readMs: 0,
     })
 }
 
@@ -651,6 +672,8 @@ function queueComposed(
         toolhead: i8(toolhead),
         laneFault: false,
         unread: true,
+        raisedMs: 0,
+        readMs: 0,
     })
 }
 
@@ -1232,6 +1255,8 @@ export function applyComponentStatus(m: Model, obj: unknown): boolean {
     if (typeof obj.spoolman_online === 'boolean') m.spoolmanOnline = obj.spoolman_online
     // a component that predates the edit endpoint sends no `edit`: it can't
     m.spoolmanEdit = obj.edit === true
+    // likewise a component with no sequence stop sends no `stop`: the display keeps the cancel G-code
+    m.spoolmanStop = obj.stop === true
 
     for (const [key, bay] of Object.entries(bays)) {
         if (!isObject(bay)) continue

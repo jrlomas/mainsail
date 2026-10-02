@@ -30,6 +30,7 @@ import {
     slotGroup,
     slotId,
     toolShortfall,
+    alertBadgeExpired,
 } from './model'
 import type { Alert, Model, Toolhead, Unit } from './model'
 import { AlertKind } from './model'
@@ -126,6 +127,18 @@ function inkFor(rgb: number): Ink {
     const g = (rgb >> 8) & 0xff
     const b = rgb & 0xff
     return 2126 * r + 7152 * g + 722 * b > 1600000 ? 'dark' : 'light'
+}
+
+/** Whether a filament color is too close to the dark surface to read, so the
+ *  renderer draws a light 1 px outline around it (outline_for() in view.c):
+ *  integer luminance with a gamma of 2, below 0.065 (about 1.5:1 against the
+ *  lightest surface). */
+const OUTLINE_LUM_MAX = 42266250
+function outlineFor(rgb: number): boolean {
+    const r = (rgb >> 16) & 0xff
+    const g = (rgb >> 8) & 0xff
+    const b = rgb & 0xff
+    return 2126 * r * r + 7152 * g * g + 722 * b * b < OUTLINE_LUM_MAX
 }
 
 const mixChannel = (fg: number, bg: number, pct: number): number =>
@@ -1085,7 +1098,7 @@ function unitScopeClear(m: Model, unitIdx: number, group: ViewAlertGroup | null)
     if (th && th.hasError && th.errorUnit === unitIdx) return false
     if (th && th.runoutActive && th.runoutFromUnit === unitIdx) return false
     if (u.slots.some((s) => s.state === SlotState.ERROR)) return false
-    return !m.alerts.some((a) => !a.laneFault && a.unread && a.unit === unitIdx)
+    return !m.alerts.some((a) => !a.laneFault && a.unread && a.unit === unitIdx && !alertBadgeExpired(m, a))
 }
 
 /** The same for a toolhead (toolhead_scope_clear() in view.c). */
@@ -1098,7 +1111,9 @@ function toolheadScopeClear(
 ): boolean {
     if (group || th.hasError || th.runoutActive) return false
     if (message.tone !== 'neutral') return false
-    return !m.alerts.some((a) => !a.laneFault && a.unread && a.unit < 0 && a.toolhead === thIdx)
+    return !m.alerts.some(
+        (a) => !a.laneFault && a.unread && a.unit < 0 && a.toolhead === thIdx && !alertBadgeExpired(m, a)
+    )
 }
 
 function scanAlerts(m: Model, unitIdx: number, thIdx: number): ViewAlertGroup | null {
@@ -1153,6 +1168,7 @@ function scanAlerts(m: Model, unitIdx: number, thIdx: number): ViewAlertGroup | 
     for (const a of m.alerts) {
         if (a.laneFault) continue
         if (unitIdx >= 0 ? a.unit !== unitIdx : !(a.unit < 0 && a.toolhead === thIdx)) continue
+        if (alertBadgeExpired(m, a)) continue // aged out of the badge (4g); still in the history
         if (unitIdx >= 0) continue // low filament: the tile's ring says it
         if (th && buildMessage(m, th).text === alertText(m, a)) continue // the message row says it
         add(1, a.severity, () => historyItem(m, a))
@@ -1336,11 +1352,11 @@ function restEmpty(m: Model, thIdx: number): string {
  *  name, so its path rests empty too, as in build_activity_rest() in view.c. */
 function activityRest(m: Model, th: Toolhead, thIdx: number): ViewToolhead['activity']['rest'] {
     if (!th.loaded || th.loadedExt >= 0 || th.loadedUnit < 0 || th.loadedUnit >= m.units.length) {
-        return { label: restEmpty(m, thIdx), color: null, loaded: false }
+        return { label: restEmpty(m, thIdx), color: null, outline: false, loaded: false }
     }
     const unit = m.units[th.loadedUnit]
     if (th.loadedSlot < 0 || th.loadedSlot >= unit.slots.length) {
-        return { label: restEmpty(m, thIdx), color: null, loaded: false }
+        return { label: restEmpty(m, thIdx), color: null, outline: false, loaded: false }
     }
     const slot = unit.slots[th.loadedSlot]
     // The tool label is the one the hotend icon overlays: the group's name, or
@@ -1354,6 +1370,7 @@ function activityRest(m: Model, th: Toolhead, thIdx: number): ViewToolhead['acti
     return {
         label: cut(label, REST_PATH),
         color: slot.colorKnown ? hex(slot.color) : null,
+        outline: slot.colorKnown && outlineFor(slot.color),
         loaded: true,
     }
 }
@@ -1389,6 +1406,7 @@ function buildToolhead(m: Model, index: number): ViewToolhead {
             label: cut(gi >= 0 ? m.groups[gi].name : str('UNKNOWN_MARK'), LABEL),
             color: known ? hex(color) : null,
             ink: inkFor(color),
+            outline: known && outlineFor(color),
         }
     }
 

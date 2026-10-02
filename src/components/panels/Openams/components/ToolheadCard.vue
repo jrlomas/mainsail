@@ -2,7 +2,7 @@
     <section class="fps" :data-toolhead="toolhead.id">
         <div class="fps-head">
             <div class="fps-title">
-                <div class="th-icon" :class="{ loaded: !!tool }" :style="style">
+                <div class="th-icon" :class="{ loaded: !!tool, outline: !!tool && tool.outline }" :style="style">
                     <toolhead-icon :color="iconColor" />
                     <span v-if="tool" class="th-tool" :class="`ink-${tool.ink}`">{{ tool.label }}</span>
                 </div>
@@ -148,6 +148,12 @@ export default class ToolheadCard extends Vue {
         box-shadow:
             0 0 0 1px color-mix(in srgb, var(--tool) 35%, transparent),
             0 0 14px color-mix(in srgb, var(--tool) 45%, transparent);
+    }
+
+    /* a dark filament on the dark surface: a light 1 px outline (the core says when) */
+    &.loaded.outline {
+        outline: 1px solid var(--oams-text-faint);
+        outline-offset: 0;
     }
 }
 

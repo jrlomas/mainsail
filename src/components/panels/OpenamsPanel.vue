@@ -99,7 +99,7 @@ export default class OpenamsPanel extends Mixins(BaseMixin) {
      *  by its method, a refusal as Mainsail's transient error. A `local` result
      *  is display-only and goes nowhere.
      *
-     *  The calls waited on are the spool edit and a G-code script: the printer
+     *  The calls waited on are the spool edit, Stop and a G-code script: the printer
      *  can refuse either in words of its own ("Spoolman is offline", "Heat the
      *  extruder before unloading"), which go back to the panel with `done`.
      *  After an edit the vendor list is read again (the host may have added
@@ -128,6 +128,14 @@ export default class OpenamsPanel extends Mixins(BaseMixin) {
                             done?.()
                             this.requestVendors()
                         },
+                        (error: unknown) => done?.(errorMessage(error))
+                    )
+                } else if (result.method === 'server.openams.stop') {
+                    // Waited on, so the Stop button is released when the printer
+                    // answers ("stopping", or "nothing running": both end the
+                    // wait) or refuses (an older component has no such method).
+                    socket.emitAndWait(result.method, result.params).then(
+                        () => done?.(),
                         (error: unknown) => done?.(errorMessage(error))
                     )
                 } else {

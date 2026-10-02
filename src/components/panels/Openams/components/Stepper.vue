@@ -2,7 +2,7 @@
     <div class="stepper-wrap" :class="{ atrest: !!rest }">
         <ol class="stepper" :class="`kind-${activity.kind}`" :aria-label="label">
             <li v-if="rest" class="step rest">
-                <i :style="restStyle"></i>
+                <i :class="{ outline: rest.outline }" :style="restStyle"></i>
                 <span>{{ rest.label }}</span>
             </li>
             <li
@@ -113,6 +113,11 @@ export default class Stepper extends Vue {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    /* a dark filament on the dark surface: a light 1 px outline (the core says when) */
+    i.outline {
+        box-shadow: 0 0 0 1px var(--oams-text-faint);
     }
 
     &.done i {

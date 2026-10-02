@@ -107,6 +107,40 @@ const groupFind = (m: Model, name: string): number => m.groups.findIndex((g) => 
 /** The FPS lane the host gave `unit`, or null. */
 const unitLane = (m: Model, unit: number): string | null => m.units[unit]?.lane || null
 
+/** Whether a sequence runs on a toolhead: its lane is busy loading or
+ *  unloading, or its stage plan has a current step that has not failed
+ *  (sequence_runs() in actions_map.c). */
+function sequenceRuns(busy: number, stepCount: number, stepCurrent: number, stepFailed: number): boolean {
+    return busy !== Busy.NONE || (stepCount > 0 && stepCurrent >= 0 && stepCurrent < stepCount && stepFailed < 0)
+}
+
+/** The lane a `stop` line stops (stop_resolve() in actions_map.c). */
+function stopResolve(line: string, m: Model): { rc: 1; lane: string } | { rc: -1; why: string } | { rc: 0 } {
+    if (line === 'stop') {
+        const unit = m.busyUnit >= 0 ? m.busyUnit : m.thisUnit
+        const own = m.units[m.thisUnit]
+        const th = own && own.toolhead >= 0 ? m.toolheads[own.toolhead] : undefined
+        const runs =
+            m.busy !== Busy.NONE ||
+            (th ? sequenceRuns(Busy.NONE, th.steps.length, th.stepCurrent, th.stepFailed) : false)
+        if (!runs) return { rc: -1, why: str('REASON_NOTHING_BUSY') }
+        const lane = unitLane(m, unit)
+        if (!lane) return { rc: -1, why: str('REASON_LANE_UNKNOWN') }
+        return { rc: 1, lane }
+    }
+    const arg = rest(line, 'stop')
+    if (arg !== null) {
+        const idx = toolheadFind(m, arg)
+        if (idx < 0) return { rc: 0 }
+        const t = m.toolheads[idx]
+        if (!sequenceRuns(t.busy, t.steps.length, t.stepCurrent, t.stepFailed)) {
+            return { rc: -1, why: str('REASON_NOTHING_BUSY') }
+        }
+        return { rc: 1, lane: t.id }
+    }
+    return { rc: 0 }
+}
+
 /** The toolhead whose id (the FPS lane) is `id`, or -1. */
 const toolheadFind = (m: Model, id: string): number => m.toolheads.findIndex((t) => t.id === id)
 
@@ -237,24 +271,17 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
         return { rc: 1, script: '' }
     }
 
-    // `stop` cancels the load running on the busy unit's lane. An exact match:
-    // the alert button `stop drying` is a local line of its own.
-    if (line === 'stop') {
-        if (m.busy === Busy.NONE || m.busyUnit < 0) return refuse(str('REASON_NOTHING_BUSY'))
-        const lane = unitLane(m, m.busyUnit)
-        if (!lane) return refuse(str('REASON_LANE_UNKNOWN'))
-        w.cmd(`OAMSM_LOAD_FILAMENT_CANCEL FPS=${lane}`)
-        return { rc: 1, script: '' }
-    }
-
-    // `stop <toolhead id>` is the panel's own targeted cancel; a line that does
-    // not resolve to a toolhead (including "stop drying") is local.
-    if ((arg = rest(line, 'stop')) !== null) {
-        const th = toolheadFind(m, arg)
-        if (th < 0) return NOT_MINE
-        if (m.toolheads[th].busy === Busy.NONE) return refuse(str('REASON_NOTHING_BUSY'))
-        w.cmd(`OAMSM_LOAD_FILAMENT_CANCEL FPS=${m.toolheads[th].id}`)
-        return { rc: 1, script: '' }
+    // `stop` / `stop <toolhead id>` (UNIFIED_UI 4g): stops whatever sequence runs
+    // on the lane. With the host's own stop (the component's `stop`) the line is
+    // the RPC server.openams.stop, not G-code.
+    {
+        const r = stopResolve(line, m)
+        if (r.rc === -1) return refuse(r.why)
+        if (r.rc === 1) {
+            if (m.spoolmanStop) return NOT_MINE // actionsRpcMapped() has it
+            w.cmd(`OAMSM_LOAD_FILAMENT_CANCEL FPS=${r.lane}`)
+            return { rc: 1, script: '' }
+        }
     }
 
     if ((arg = rest(line, 'reread')) !== null) {
@@ -653,6 +680,13 @@ function spoolEdit(args: string, m: Model): RpcMapped {
  *  ...`, `spool confirm <slot> <grams>` and `job metadata <file>`, with the
  *  refusals told apart (actions_rpc_why in C). */
 export function actionsRpcMapped(line: string, m: Model): RpcMapped {
+    // `stop` with the host's own stop -> server.openams.stop {lane}
+    if (m.spoolmanStop) {
+        const r = stopResolve(line, m)
+        if (r.rc === -1) return { rc: -1, why: r.why }
+        if (r.rc === 1) return { rc: 1, method: 'server.openams.stop', params: { lane: r.lane } }
+    }
+
     if (line === 'spool list') {
         return { rc: 1, method: 'server.spoolman.proxy', params: { request_method: 'GET', path: '/v1/spool' } }
     }

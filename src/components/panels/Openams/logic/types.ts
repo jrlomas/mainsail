@@ -171,7 +171,7 @@ export interface ViewToolhead {
     /** The FPS id as configured ("fps1"). */
     subtitle: string
     /** The loaded tool: the hotend icon's overlay and tint only. */
-    tool: { label: string; color: string | null; ink: Ink } | null
+    tool: { label: string; color: string | null; ink: Ink; outline: boolean } | null
     pressure: {
         value: number
         set_point: number
@@ -195,6 +195,8 @@ export interface ViewToolhead {
             /** "#rrggbb", or null when the color is unknown (nothing loaded, or a
              *  spool nobody told us the color of). */
             color: string | null
+            /** True when the color is too dark for the surface: draw a light 1 px outline. */
+            outline: boolean
             loaded: boolean
         } | null
     }
@@ -329,6 +331,12 @@ export interface Core {
     /** Drop every owned copy and reset the model, keeping the alert history
      *  when @p keepAlerts. Call on a printer reset and on a socket reconnect. */
     reset(keepAlerts?: boolean): void
+    /**
+     * Set the clock the core stamps alerts with and ages them by, in
+     * milliseconds (a uint32; the host's Date.now() by default), or null to
+     * follow the host's clock again. Tests set it to stay deterministic.
+     */
+    setClock(ms: number | null): void
     /** The current panel tree. */
     view(): View
     /** Resolve an action line (filling `{field}` placeholders from @p form). */

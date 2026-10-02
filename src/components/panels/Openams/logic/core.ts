@@ -36,7 +36,9 @@ import type { ActionResult, Core, ObjectKind, View } from './types'
 
 /** One openams_ui copy per unit, plus one each for the singleton kinds. */
 const MAX_ENTRIES = MAX_UNITS + 7
-const KIND_LEN = 16
+// Every kind must fit whole (the C's CORE_KIND_LEN): a kind cut short is never
+// found again, so each apply would take a new entry until the table is full.
+const KIND_LEN = 24
 const NAME_LEN = 24
 
 type Json = Record<string, unknown>
@@ -72,6 +74,20 @@ export class OpenamsLogic implements Core {
     private entries: Entry[] = []
     private listeners = new Set<(view: View) => void>()
     private flushPending = false
+    private fixedClock: number | null = null
+    private tick: ReturnType<typeof setInterval> | null = null
+
+    /** Set the model's clock to @p ms (tests do, to stay deterministic), or null
+     *  to follow Date.now() again. The clock stamps alerts as they are raised
+     *  and decides when a read one leaves the toolhead's badge. */
+    setClock(ms: number | null): void {
+        this.fixedClock = ms === null ? null : ms >>> 0
+        this.model.nowMs = this.fixedClock ?? Date.now() >>> 0
+    }
+
+    private stamp(): void {
+        this.model.nowMs = this.fixedClock ?? Date.now() >>> 0
+    }
 
     /** The entry for (kind, name), created when new; null when the table is
      *  full. Stored kind and name are cut like the C's buffers, and looked up by
@@ -89,6 +105,7 @@ export class OpenamsLogic implements Core {
      *  Returns whether the copy's content changed. */
     apply(kind: ObjectKind | string, name: string | null | undefined, obj: unknown): boolean {
         // Objects cross the boundary as JSON, as they do into the wasm module.
+        this.stamp()
         const json = JSON.stringify(obj)
         if (json === undefined) throw new TypeError('openams-core: apply() needs a JSON value')
         const value: unknown = JSON.parse(json)
@@ -163,6 +180,7 @@ export class OpenamsLogic implements Core {
 
     /** The current panel tree. */
     view(): View {
+        this.stamp()
         return buildView(this.model)
     }
 
@@ -186,8 +204,17 @@ export class OpenamsLogic implements Core {
     subscribe(listener: (view: View) => void): () => void {
         if (typeof listener !== 'function') throw new TypeError('openams-core: subscribe() needs a function')
         this.listeners.add(listener)
+        // An entry ages out of a badge with no new data: look again now and then.
+        if (this.tick === null && typeof setInterval === 'function') {
+            this.tick = setInterval(() => this.flush(), 15000)
+            ;(this.tick as { unref?: () => void }).unref?.()
+        }
         return () => {
             this.listeners.delete(listener)
+            if (this.listeners.size === 0 && this.tick !== null) {
+                clearInterval(this.tick)
+                this.tick = null
+            }
         }
     }
 
