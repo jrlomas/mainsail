@@ -41,6 +41,10 @@ export interface DialogState {
     values: FormValues
 }
 
+/** Which lead word a refusal is said with: the spool editor's own, or the
+ *  general one. resolve() knows which call it handed the host. */
+export type Refusal = 'edit' | 'action'
+
 /** A form's opening values, taken from the core's own defaults. A value keeps
  *  the kind its field declares, so a select's value is still a number when it
  *  goes back to the logic. */
@@ -196,15 +200,23 @@ export class Interactivity {
     }
 
     /** A call the host waited on is over: the action stops waiting, and a
-     *  refusal (the printer's own words) is said in the message row, after the
-     *  core's "Could not save the spool:" (the lead of an edit's refusal). */
-    settle(line: string, message?: string): void {
+     *  refusal (the printer's own words) is said in the message row, after
+     *  the core's lead - "Could not save the spool:" for the spool editor,
+     *  "Could not do that:" for anything else (H3).
+     *
+     *  A refusal that arrives after the wait has already ended is the outcome
+     *  of a run that had already started - a load's script is answered only
+     *  once it has run, which can be minutes. The printer's own status says
+     *  it then, so the panel says nothing; the ESP32 follows the same rule. */
+    settle(line: string, message?: string, kind: Refusal = 'edit'): void {
         // A host that answers at once does so before the press is recorded (run()
         // calls the runner first), so the settling waits for the end of the click.
         queueMicrotask(() => {
+            const waited = this.pending[line] !== undefined
             this.release(line)
-            if (!message) return
-            const lead = this.current?.labels.edit_failed ?? ''
+            if (!message || !waited) return
+            const labels = this.current?.labels
+            const lead = kind === 'action' ? labels?.action_refused : labels?.edit_failed
             this.flash(lead ? `${lead} ${message}` : message, 'error')
         })
     }

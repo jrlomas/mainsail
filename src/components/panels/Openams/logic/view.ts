@@ -51,6 +51,7 @@ import {
     fmtSpoolOption,
     fmtToolSpool,
     fmtUnitSpool,
+    format,
     language,
     languages,
     SETTING_KEYS,
@@ -88,6 +89,7 @@ const TITLE = 32
 const SUBLABEL = 32
 const MESSAGE = 176
 const PRESSURE_TEXT = 12
+const STEP_DETAIL = 128 // VIEW_STEP_DETAIL_LEN in src/view/view.h: "{step} · {detail}"
 const SCALE = 8
 const UNIT_ID = 8
 const ENV_TEXT = 48
@@ -1136,7 +1138,9 @@ function toolheadActions(m: Model, th: Toolhead): ViewAction[] {
 
 /** The display label of one H2 stage step name, in the current language; a
  *  name newer than this list, or one that is already a sentence, shows as
- *  itself (stage_label() in view.c). */
+ *  itself (stage_label() in view.c). A step the host gave a label of its own
+ *  arrives here already spelled out (H3), so it falls through to that last
+ *  case: the user's words, never translated. */
 function stageLabel(name: string): string {
     switch (name) {
         case 'heat':
@@ -1153,9 +1157,29 @@ function stageLabel(name: string): string {
             return str('STEP_GRAB')
         case 'calibrate':
             return str('STEP_CALIBRATE')
+        case 'home':
+            return str('STEP_HOME')
+        case 'clean':
+            return str('STEP_CLEAN')
         default:
             return name
     }
+}
+
+/** The plan as the stepper draws it: every step's display text, and the
+ *  running one carrying its own detail beside it ("Heat the nozzle · 250 °C",
+ *  H3). The composition is the view's, so every renderer draws activity.steps
+ *  as it always has. */
+function stepLabels(th: Toolhead): string[] {
+    const steps = th.steps.slice(0, 8).map(stageLabel)
+    if (th.stepDetail && th.stepCurrent >= 0 && th.stepCurrent < steps.length) {
+        steps[th.stepCurrent] = format(
+            'STEP_DETAIL',
+            { step: steps[th.stepCurrent], detail: th.stepDetail },
+            STEP_DETAIL
+        )
+    }
+    return steps
 }
 
 function buildToolhead(m: Model, index: number): ViewToolhead {
@@ -1211,7 +1235,7 @@ function buildToolhead(m: Model, index: number): ViewToolhead {
         pressure,
         activity: {
             kind: activityKind,
-            steps: th.steps.slice(0, 8).map(stageLabel),
+            steps: stepLabels(th),
             index: th.stepCurrent,
             failed: th.stepFailed,
         },
@@ -1331,6 +1355,7 @@ export function buildView(m: Model): View {
             cancel: str('LABEL_CANCEL'),
             no_response: str('LABEL_NO_RESPONSE'),
             edit_failed: str('LABEL_EDIT_FAILED'),
+            action_refused: str('ACTION_REFUSED'),
             groups: str('SCREEN_GROUPS'),
             no_group: str('MAP_NO_GROUP'),
         },

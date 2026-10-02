@@ -99,10 +99,11 @@ export default class OpenamsPanel extends Mixins(BaseMixin) {
      *  by its method, a refusal as Mainsail's transient error. A `local` result
      *  is display-only and goes nowhere.
      *
-     *  The spool edit is the one call waited on: the printer can refuse it in
-     *  words of its own ("Spoolman is offline"), which go back to the panel with
-     *  `done`, and the vendor list is read again after it (the host may have
-     *  added one). */
+     *  The calls waited on are the spool edit and a G-code script: the printer
+     *  can refuse either in words of its own ("Spoolman is offline", "Heat the
+     *  extruder before unloading"), which go back to the panel with `done`.
+     *  After an edit the vendor list is read again (the host may have added
+     *  one). */
     onRequest(result: ActionResult, done?: (message?: string) => void) {
         const socket = this.$socket as unknown as {
             emit: (method: string, params?: unknown) => void
@@ -111,7 +112,14 @@ export default class OpenamsPanel extends Mixins(BaseMixin) {
 
         switch (result.kind) {
             case 'gcode':
-                socket.emit('printer.gcode.script', { script: result.script })
+                // Waited on, like the spool edit: the printer answers a script
+                // only once it has run, and a refusal ("Heat the extruder
+                // before unloading") comes back in its own words. The call is
+                // still the console's, so the script shows there.
+                socket.emitAndWait('printer.gcode.script', { script: result.script }).then(
+                    () => done?.(),
+                    (error: unknown) => done?.(errorMessage(error))
+                )
                 break
             case 'rpc':
                 if (result.method === 'server.openams_spoolman.edit') {

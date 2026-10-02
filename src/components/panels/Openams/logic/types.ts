@@ -247,6 +247,8 @@ export interface ViewLabels {
     no_response: string
     /** "Could not save the spool:": the lead of a host's refusal of an edit, which ends in its own colon; a renderer adds the host's words after a space. */
     edit_failed: string
+    /** "Could not do that:": the same lead for a refusal of any other action (a G-code script the printer refused). */
+    action_refused: string
     /** The head of a unit's filament groups section. */
     groups: string
     /** The row of the bays that belong to no group. */

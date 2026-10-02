@@ -40,6 +40,7 @@ const GROUP_NAME = 8
 const LANE_ID = 16
 const MATERIAL = 24
 const STEP_TEXT = 48
+const STEP_DETAIL_TEXT = 32 // MMU_STEP_DETAIL_LEN in src/model/mmu_model.h
 const ALERT_TEXT = 48
 const ERROR_CODE = 40
 const ERROR_TEXT = 96
@@ -122,6 +123,8 @@ export interface Toolhead {
     steps: string[]
     stepCurrent: number
     stepFailed: number
+    /** The running step's own detail ("250 °C"); '' = none. */
+    stepDetail: string
     currentGroup: number
     hasError: boolean
     errorSeverity: number
@@ -406,6 +409,7 @@ function toolheadGetOrCreate(m: Model, id: string | null): Toolhead | null {
         steps: [],
         stepCurrent: -1,
         stepFailed: -1,
+        stepDetail: '',
         currentGroup: -1,
         hasError: false,
         errorSeverity: Sev.INFO,
@@ -921,21 +925,34 @@ function mapDryer(u: Unit, dryer: unknown): void {
     }
 }
 
-/** `lane.stage` is null or [plan, index, failed]: the ordered step names, the
- *  running step or null, and the name of the step that failed or null. */
+/** The display text of one plan entry: the label the host wrote for it, if it
+ *  wrote one (H3), and otherwise the step's own name. The view labels a name;
+ *  a label is already the user's words and is never translated. */
+function stepLabel(name: string, labels: unknown): string {
+    if (typeof labels !== 'object' || labels === null) return name
+    const label = (labels as Record<string, unknown>)[name]
+    return typeof label === 'string' && label !== '' ? label : name
+}
+
+/** `lane.stage` is null or [plan, index, failed, detail, labels]: the ordered
+ *  step names, the running step or null, the name of the step that failed or
+ *  null, the running step's own detail or null, and a {name: label} object for
+ *  the steps that carry one. An older printer's 3-element array has neither a
+ *  detail nor labels, and is read exactly as before. */
 function mapStage(th: Toolhead, stage: unknown): void {
     th.steps = []
     th.stepCurrent = -1
     th.stepFailed = -1
+    th.stepDetail = ''
     if (!Array.isArray(stage) || stage.length < 3) return
-    const [plan, index, failed] = stage as unknown[]
+    const [plan, index, failed, detail, labels] = stage as unknown[]
     if (!Array.isArray(plan)) return
 
     const count = Math.min(plan.length, MAX_STEPS)
     for (let i = 0; i < count; i++) {
         const step = plan[i]
         // A step that is not a string leaves its (zeroed) slot empty.
-        th.steps.push(typeof step === 'string' ? cut(step, STEP_TEXT) : '') // the host's stage name; the view labels it
+        th.steps.push(typeof step === 'string' ? cut(stepLabel(step, labels), STEP_TEXT) : '')
     }
     if (typeof index === 'number') th.stepCurrent = i8(index)
 
@@ -948,6 +965,10 @@ function mapStage(th: Toolhead, stage: unknown): void {
             }
         }
     }
+
+    // The detail belongs to the running step (H3); the view puts it beside the
+    // step's own text.
+    if (typeof detail === 'string') th.stepDetail = cut(detail, STEP_DETAIL_TEXT)
 }
 
 function mapRunout(m: Model, th: Toolhead, lane: unknown): void {
