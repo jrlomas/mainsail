@@ -342,7 +342,8 @@ export default class SelectField extends Vue {
     border: 1px solid color-mix(in srgb, var(--oams-text, currentColor) 14%, var(--oams-pop-base, #14161a));
     border-radius: 12px;
     background: color-mix(in srgb, var(--oams-text, currentColor) 5%, var(--oams-pop-base, #14161a));
-    color: inherit;
+    color: var(--oams-pop-ink, inherit);
+    text-shadow: none;
     font-family: var(--oams-font-ui, inherit);
     font-size: var(--oams-fs-body);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);

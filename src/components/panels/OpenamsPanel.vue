@@ -99,11 +99,11 @@ export default class OpenamsPanel extends Mixins(BaseMixin) {
      *  by its method, a refusal as Mainsail's transient error. A `local` result
      *  is display-only and goes nowhere.
      *
-     *  The calls waited on are the spool edit, Stop and a G-code script: the printer
-     *  can refuse either in words of its own ("Spoolman is offline", "Heat the
-     *  extruder before unloading"), which go back to the panel with `done`.
-     *  After an edit the vendor list is read again (the host may have added
-     *  one). */
+     *  The calls waited on are the spool edit, the spool confirmation, Stop and
+     *  a G-code script: the printer can refuse each in words of its own
+     *  ("Spoolman is offline", "Heat the extruder before unloading"), which go
+     *  back to the panel with `done`. After an edit the vendor list is read
+     *  again (the host may have added one). */
     onRequest(result: ActionResult, done?: (message?: string) => void) {
         const socket = this.$socket as unknown as {
             emit: (method: string, params?: unknown) => void
@@ -130,10 +130,15 @@ export default class OpenamsPanel extends Mixins(BaseMixin) {
                         },
                         (error: unknown) => done?.(errorMessage(error))
                     )
-                } else if (result.method === 'server.openams.stop') {
+                } else if (
+                    result.method === 'server.openams.stop' ||
+                    result.method === 'server.openams_spoolman.confirm'
+                ) {
                     // Waited on, so the Stop button is released when the printer
                     // answers ("stopping", or "nothing running": both end the
-                    // wait) or refuses (an older component has no such method).
+                    // wait) or refuses (an older component has no such method),
+                    // and a spool confirmation the host turns down ("no bay is
+                    // awaiting confirmation") says so in the host's words.
                     socket.emitAndWait(result.method, result.params).then(
                         () => done?.(),
                         (error: unknown) => done?.(errorMessage(error))

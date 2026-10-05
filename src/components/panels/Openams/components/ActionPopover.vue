@@ -76,7 +76,10 @@ export default class ActionPopover extends Vue {
     /* A popover floats above the card, so it needs a base of its own rather
        than the 5% alpha --oams-surface-2 a host's surfaces are made of. */
     background: color-mix(in srgb, var(--oams-text, currentColor) 5%, var(--oams-pop-base, #14161a));
-    color: inherit;
+    /* Its own ink, never its parent's: a tile's menu sits inside the tile, and
+       a light spool's dark ink would vanish on this base (see OpenamsView). */
+    color: var(--oams-pop-ink, inherit);
+    text-shadow: none;
     font-family: var(--oams-font-ui, inherit);
     font-size: var(--oams-fs-body);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);

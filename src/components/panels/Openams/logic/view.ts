@@ -331,6 +331,16 @@ function bayIsUnknown(m: Model, unitIdx: number, bay: number): boolean {
     return tileStateAndTag(m, unitIdx, bay).state === 'unknown'
 }
 
+/** The tile wears the "Confirm" tag: a spool the host linked waits for the
+ *  user's word, and nothing more urgent is on the tag (a fault, a runout, a
+ *  motion, an empty bay) - tileStateAndTag()'s own rule (bay_awaits_confirm()
+ *  in view.c). */
+function bayAwaitsConfirm(m: Model, unitIdx: number, bay: number): boolean {
+    if (!m.units[unitIdx].slots[bay].pendingConfirmation) return false
+    const { state } = tileStateAndTag(m, unitIdx, bay)
+    return state === 'loaded' || state === 'ready' || state === 'unknown'
+}
+
 function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
     const u = m.units[unitIdx]
     const s = u.slots[bay]
@@ -596,6 +606,38 @@ function addSaveAndLoadAction(list: ActionList, m: Model, unitIdx: number, bay: 
     if (a.enabled) check(a, `load ${id}`, m)
 }
 
+/** "Confirm spool", the "Confirm" tag's own action (UNIFIED_UI.md 7,
+ *  SpoolConfirm): how much is left on the spool the host linked, starting from
+ *  a full one (its initial weight, the device's "Yes, full") and adjustable
+ *  before it is sent as `spool confirm <slot> <grams>`. Enabled and reason are
+ *  the one predicate's. */
+function addConfirmAction(list: ActionList, m: Model, unitIdx: number, bay: number, id: string): void {
+    const initial = editDefaults(m, unitIdx, bay).initialG
+    const a = list.add('confirm_spool', str('ACTION_CONFIRM_SPOOL'), `spool confirm ${id} {grams}`, 'primary')
+    if (!a) return
+    a.target = 'tag'
+    a.form = {
+        fields: [
+            {
+                id: 'grams',
+                label: str('FIELD_REMAINING_LABEL'),
+                kind: 'number',
+                value: fnum(initial),
+                min: 0,
+                max: 10000,
+                step: 1,
+                unit: str('FIELD_WEIGHT_UNIT'),
+                required: false,
+            },
+        ],
+        // The button says what it does; confirming the full spool as it stands is
+        // the common answer, so the form asks for no change.
+        submit_label: str('BTN_CONFIRM'),
+        require_change: false,
+    }
+    check(a, cut(`spool confirm ${id} ${initial}`, ACTION_LINE), m)
+}
+
 /** The choice the form opens on: the bay's own group, so submitting it
  *  unchanged moves nothing. A bay in no group has none to name, and "No group"
  *  is the one choice the mapper refuses on it - there is nothing to unassign -
@@ -732,6 +774,10 @@ function tileActions(m: Model, unitIdx: number, bay: number): ViewAction[] {
 
     // Load and unload act on the tile body; the rest edit the spool (the ring).
     for (const a of list.items) a.target = a.id === 'load' || a.id === 'unload' ? 'tile' : 'ring'
+
+    // The "Confirm" tag's details carry the confirmation itself: the tag says a
+    // spool waits for the user, and its popover is where they answer.
+    if (bayAwaitsConfirm(m, unitIdx, bay)) addConfirmAction(list, m, unitIdx, bay, id)
 
     // The tag's details: the lane fault that names this unit and bay is shown by
     // this tile, so its recovery actions live here, under the tag.

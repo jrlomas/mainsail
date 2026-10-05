@@ -231,22 +231,30 @@ export default class OpenamsView extends Vue {
 }
 
 /* A popover and a dialog float above the panel, so they need a base of their
-   own instead of the alpha surfaces a host's card is made of. A host's theme is
-   Vuetify's own light/dark class, so the base follows it. */
+   own instead of the alpha surfaces a host's card is made of, and an ink of
+   their own to read on it. A popover sits in the document inside what opened
+   it (a tile's menu and its tag's details inside the tile), so an inherited
+   color would be that element's: a light spool's dark ink on the dark base.
+   A host's theme is Vuetify's own light/dark class (`theme--light` on the
+   application, and on Mainsail's <html>), so the base and the ink follow it. */
 .oams-panel {
     --oams-pop-base: #1e1e1e;
+    --oams-pop-ink: #ffffff;
 }
 
 .oams-panel[data-theme='dark'] {
     --oams-pop-base: #14161a;
+    --oams-pop-ink: var(--oams-text);
 }
 
 .oams-panel[data-theme='light'] {
     --oams-pop-base: #f4f5f7;
+    --oams-pop-ink: var(--oams-text);
 }
 
-.v-application--is-l .oams-panel {
+.theme--light .oams-panel[data-theme='host'] {
     --oams-pop-base: #ffffff;
+    --oams-pop-ink: rgba(0, 0, 0, 0.87);
 }
 </style>
 
