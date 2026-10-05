@@ -35,9 +35,10 @@ export const MAX_TOOLHEADS = 4
 export const MAX_PENDING_ALERTS = 4
 
 // C's fixed text buffers (sizeof, so the text keeps size - 1 bytes).
-const UNIT_NAME = 8
-const GROUP_NAME = 8
-const LANE_ID = 16
+const UNIT_NAME = 32 // MMU_UNIT_NAME_LEN
+const CANNOT_DRY_REASON = 48 // sizeof cannot_dry_reason: MMU_TEXT_LEN * 2
+const GROUP_NAME = 16 // MMU_GROUP_NAME_LEN
+const LANE_ID = 32 // MMU_LANE_ID_LEN
 const MATERIAL = 24
 const STEP_TEXT = 48
 const STEP_DETAIL_TEXT = 32 // MMU_STEP_DETAIL_LEN in src/model/mmu_model.h
@@ -47,7 +48,7 @@ const ERROR_TEXT = 96
 const ERROR_ACT = 16
 const SPOOL_MATERIAL = 12
 const SPOOL_VENDOR = 16
-const REF_NAME = 16
+const REF_NAME = UNIT_NAME
 
 // ------------------------------------------------------------------ enums
 // Plain numbers, as in the C (Node strips types, so no `enum`).
@@ -78,7 +79,28 @@ export interface Slot {
     calState: number
     positioning: boolean // the firmware is positioning a new spool
     globalId: number // `bays[i].id`, the host's own bay id; -1 = unknown
+    actsKnown: boolean // the host sent `bays[i].a`; false (an older host): nothing is withheld
+    acts: number // BayAct bits of the letters `bays[i].a` lists
 }
+
+/** The bay actions `bays[i].a` lists, one bit per letter. Only the motion ones
+ *  gate anything; the rest are kept so the mask is the host's list. */
+export const BayAct = {
+    LOAD: 1,
+    UNLOAD: 2,
+    CALIBRATE: 4,
+    ASSIGN: 8,
+    DETACH: 16,
+    OTHER: 32,
+} as const
+
+/** The unit actions `act` lists that the display offers, one bit each. */
+export const UnitAct = {
+    DRYER_START: 1,
+    DRYER_STOP: 2,
+    CLEAR_FAULT: 4,
+    RFID_SCAN: 8,
+} as const
 
 export interface Group {
     name: string
@@ -102,6 +124,11 @@ export interface Unit {
     powerAdapter: boolean
     hasPowerAdapter: boolean // a boolean `dryer.adapter` was sent (false: unknown, not "missing")
     cannotDryReason: string
+    readyKnown: boolean // the host sent `ready`; false: nothing is withheld for it
+    ready: boolean // false withholds load, unload and calibrate (a unit that only reports)
+    actKnown: boolean // the host sent `act`; false (an older host): nothing is withheld
+    acts: number // UnitAct bits of the entries `act` lists
+    dryUnlisted: boolean // `act` is known and lacks `dryer_start`: drying is unavailable
     hostIdx: number // the unit's top-level `idx`; -1 = unknown
     lane: string // the unit's `lane.id`; "" = unknown
     toolhead: number // index into Model.toolheads; -1 = unknown
@@ -304,6 +331,8 @@ function slotClear(): Slot {
         calState: CalState.UNKNOWN,
         positioning: false,
         globalId: -1,
+        actsKnown: false,
+        acts: 0,
     }
 }
 
@@ -356,10 +385,12 @@ export function newModel(): Model {
 // ---------------------------------------------------------------- lookups
 
 /** The index of the unit named `name`; -1 when none. The stored name is the
- *  8-byte cut one, so a longer name never matches and is created again. */
+ *  host's, cut to UNIT_NAME, so the key is cut the same way before it is
+ *  compared: an over-long name is one unit every time, never a new one. */
 export function unitIndex(m: Model, name: string | null): number {
     if (name === null) return -1
-    return m.units.findIndex((u) => u.name === name)
+    const key = cut(name, UNIT_NAME)
+    return m.units.findIndex((u) => u.name === key)
 }
 
 /** The unit `name`, created when it is new, grown to at least `minSlots`
@@ -386,6 +417,11 @@ function unitGetOrCreate(m: Model, name: string, minSlots: number): Unit | null 
             powerAdapter: false,
             hasPowerAdapter: false,
             cannotDryReason: '',
+            readyKnown: false,
+            ready: true,
+            actKnown: false,
+            acts: 0,
+            dryUnlisted: false,
             hostIdx: -1,
             lane: '',
             toolhead: -1,
@@ -401,7 +437,8 @@ function unitGetOrCreate(m: Model, name: string, minSlots: number): Unit | null 
 /** The toolhead (FPS lane) `id`, created when it is new (C2 6.5). */
 function toolheadGetOrCreate(m: Model, id: string | null): Toolhead | null {
     const want = id ?? ''
-    const found = m.toolheads.find((t) => t.id === want)
+    const key = cut(want, LANE_ID)
+    const found = m.toolheads.find((t) => t.id === key)
     if (found) return found
     if (m.toolheads.length >= MAX_TOOLHEADS) return null
     const th: Toolhead = {
@@ -447,9 +484,9 @@ function refSplit(ref: string | null): { name: string; slot: number } | null {
     if (dash < 0 || dash === ref.length - 1) return null
     const digits = ref.slice(dash + 1)
     if (!/^[0-9]+$/.test(digits)) return null
-    // char name[16] in the C: a longer unit name is not a reference.
-    if (dash === 0 || dash >= REF_NAME) return null
-    return { name: ref.slice(0, dash), slot: toInt(Number(digits)) }
+    // a name too long for the C's buffer is cut, as the model cuts its own
+    if (dash === 0) return null
+    return { name: cut(ref.slice(0, dash), REF_NAME), slot: toInt(Number(digits)) }
 }
 
 /** The unit index of `ref` (-1 when no unit has that name) and its bay. The
@@ -894,6 +931,28 @@ function mapBays(u: Unit, bays: unknown[]): void {
         const id = jint(bay, 'id')
         s.globalId = id === null ? -1 : i16(id)
 
+        // `a` is the host's own list of what this bay offers. A string (even an
+        // empty one) is a list; anything else is "not said", which withholds nothing.
+        const letters = bay.a
+        s.actsKnown = typeof letters === 'string'
+        s.acts = 0
+        if (typeof letters === 'string') {
+            for (const ch of letters) {
+                s.acts |=
+                    ch === 'l'
+                        ? BayAct.LOAD
+                        : ch === 'u'
+                          ? BayAct.UNLOAD
+                          : ch === 'c'
+                            ? BayAct.CALIBRATE
+                            : ch === 'a'
+                              ? BayAct.ASSIGN
+                              : ch === 'd'
+                                ? BayAct.DETACH
+                                : BayAct.OTHER
+            }
+        }
+
         // `sp` is the link only; null means "no spool linked here".
         const sp = bay.sp
         if (isObject(sp)) {
@@ -957,6 +1016,31 @@ function stepLabel(name: string, labels: unknown): string {
     return typeof label === 'string' && label !== '' ? label : name
 }
 
+/** The unit's own `ready` and `act`: what the host says the unit can do. Both
+ *  are optional on the wire as far as this reader goes (an older host sends
+ *  neither): absent means nothing is withheld, not that everything is. Drying
+ *  also follows `act`: a unit whose list lacks `dryer_start` cannot dry whatever
+ *  `dryer` holds, and the reason is `cannotDryReason` (the view re-words it in
+ *  the current language: dryReason()). Same as map_unit_caps() in the C. */
+function mapUnitCaps(u: Unit, ready: unknown, act: unknown): void {
+    u.readyKnown = typeof ready === 'boolean'
+    u.ready = u.readyKnown ? ready === true : true
+
+    u.actKnown = Array.isArray(act)
+    u.acts = 0
+    if (u.actKnown) {
+        if (arrayHas(act, 'dryer_start')) u.acts |= UnitAct.DRYER_START
+        if (arrayHas(act, 'dryer_stop')) u.acts |= UnitAct.DRYER_STOP
+        if (arrayHas(act, 'clear_fault')) u.acts |= UnitAct.CLEAR_FAULT
+        if (arrayHas(act, 'rfid_scan')) u.acts |= UnitAct.RFID_SCAN
+    }
+
+    u.dryUnlisted = u.actKnown && (u.acts & UnitAct.DRYER_START) === 0
+    u.cannotDryReason = u.dryUnlisted
+        ? cut(str(u.hasPowerAdapter && !u.powerAdapter ? 'ALERT_ADAPTER' : 'REASON_NOT_SUPPORTED'), CANNOT_DRY_REASON)
+        : ''
+}
+
 /** `lane.stage` is null or [plan, index, failed, detail, labels]: the ordered
  *  step names, the running step or null, the name of the step that failed or
  *  null, the running step's own detail or null, and a {name: label} object for
@@ -1014,7 +1098,7 @@ function mapLane(m: Model, th: Toolhead, lane: unknown): boolean {
 
     // `lane.ext` names the lane's extruder; "" when absent.
     const ext = jstring(lane, 'ext')
-    if (ext !== null) th.extruder = cut(ext, 16)
+    if (ext !== null) th.extruder = cut(ext, LANE_ID)
 
     const op = jstring(lane, 'op')
     const bay = refResolve(m, jstring(lane, 'bay'))
@@ -1140,6 +1224,7 @@ export function applyOpenamsUi(m: Model, obj: unknown): boolean {
 
     mapEnv(u, obj.env)
     mapDryer(u, obj.dryer)
+    mapUnitCaps(u, obj.ready, obj.act)
     u.rfid = arrayHas(obj.act, 'rfid_scan')
     mapBays(u, bays)
 

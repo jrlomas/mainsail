@@ -9,7 +9,9 @@
 
 import { cut } from './cstr'
 import {
+    BayAct,
     Busy,
+    CalState,
     DryState,
     editDefaults,
     editVendorCount,
@@ -19,11 +21,13 @@ import {
     groupEditReason,
     groupNextName,
     MATERIALS,
+    Sev,
     SlotState,
     slotGroup,
     slotId,
+    UnitAct,
 } from './model'
-import type { Model } from './model'
+import type { Model, Unit } from './model'
 import { format, str } from './strings'
 import type { ActionResult } from './types'
 
@@ -152,6 +156,69 @@ function busyHere(m: Model, unit: number, slot: number): boolean {
     return th !== undefined && th.busy !== Busy.NONE && th.busyUnit === unit && th.busySlot === slot
 }
 
+/** What holds a unit's motion, asked before any state predicate, in this
+ *  order: the unit is offline; a stop fault is latched on its lane (the host's
+ *  own words); the unit is online with no stop fault and the host says it is
+ *  not `ready`, a unit that cannot move filament at all. A unit that is ready
+ *  is never called unsupported. Returns the reason, or null. */
+function notReady(m: Model, unit: number): string | null {
+    const u = m.units[unit]
+    const th = m.toolheads[u.toolhead]
+    if (!u.connected) return str('HS_OFFLINE')
+    if (th !== undefined && th.hasError && th.errorSeverity === Sev.STOP) return th.errorText || str('LABEL_FAULT')
+    return u.readyKnown && !u.ready ? str('REASON_NOT_SUPPORTED') : null
+}
+
+/** What the host says this bay can do, applied after the model's own state
+ *  predicates so the more specific reason ("already loaded") still wins: a bay
+ *  list that lacks the action's letter withholds it. `act` is one BayAct bit.
+ *  The host's list is what is allowed now, so a letter can be missing because
+ *  of the bay's state and not for lack of the ability: calibrate is the one
+ *  action the display does not already refuse by state, so it says the state
+ *  when there is one, and "not supported" is for a bay the host would
+ *  otherwise let through. Returns the reason, or null when the action may go. */
+function bayWithheld(m: Model, unit: number, slot: number, act: number): string | null {
+    const u = m.units[unit]
+    const s = u.slots[slot]
+    if (!s.actsKnown || (s.acts & act) !== 0) return null
+    if (act === BayAct.LOAD) {
+        const th = m.toolheads[u.toolhead]
+        const laneIdle = th === undefined || (th.busy === Busy.NONE && !th.loaded)
+        if (
+            s.state === SlotState.READY &&
+            laneIdle &&
+            s.calState === CalState.UNCALIBRATED &&
+            (s.acts & BayAct.CALIBRATE) !== 0
+        )
+            return str('REASON_CALIBRATE_FIRST')
+    }
+    if (act === BayAct.CALIBRATE) {
+        const th = m.toolheads[u.toolhead]
+        if (busyHere(m, unit, slot)) return str('REASON_BUSY_HERE')
+        if (s.state === SlotState.EMPTY) return str('REASON_BAY_EMPTY')
+        if (s.state === SlotState.ERROR) return str('REASON_BAY_ERROR')
+        if (u.slots.some((x) => x.positioning)) return str('REASON_POSITIONING')
+        if (s.state === SlotState.LOADED) return str('REASON_ALREADY_LOADED')
+        if (th !== undefined && (th.busy !== Busy.NONE || th.loaded)) return str('REASON_GROUP_BUSY')
+    }
+    return str('REASON_NOT_NOW')
+}
+
+/** A unit action `act` lists, or does not (UnitAct bit). */
+const unitMay = (m: Model, unit: number, act: number): boolean => {
+    const u = m.units[unit]
+    return !u.actKnown || (u.acts & act) !== 0
+}
+
+/** Why a unit cannot dry, in the current language: '' when it can. A unit whose
+ *  `act` lacks `dryer_start` is worded here, live, so a language change reaches
+ *  it; any other reason is the host's own words (cannotDryReason).
+ *  actions_dry_reason() in the C. */
+export function dryReason(u: Unit): string {
+    if (u.dryUnlisted) return str(u.hasPowerAdapter && !u.powerAdapter ? 'ALERT_ADAPTER' : 'REASON_NOT_SUPPORTED')
+    return u.cannotDryReason
+}
+
 // ----------------------------------------------------------------- writer
 
 /** The host commands being built: one per line, and a command that does not
@@ -191,6 +258,8 @@ function loadGcode(m: Model, id: string): { rc: 1; cmd: string } | { rc: -1; why
     if (!found) return null
     const slot = m.units[found.unit].slots[found.slot]
 
+    const idle = notReady(m, found.unit)
+    if (idle !== null) return { rc: -1, why: idle }
     if (busyHere(m, found.unit, found.slot)) return { rc: -1, why: str('REASON_BUSY_HERE') }
     switch (slot.state) {
         case SlotState.LOADED:
@@ -207,6 +276,8 @@ function loadGcode(m: Model, id: string): { rc: 1; cmd: string } | { rc: -1; why
     const gi = slotGroup(m, found.unit, found.slot)
     if (gi < 0) return { rc: -1, why: str('REASON_NOT_GROUPED') }
     if (slot.globalId < 0) return { rc: -1, why: str('REASON_NO_HOST_ID') }
+    const withheld = bayWithheld(m, found.unit, found.slot, BayAct.LOAD)
+    if (withheld !== null) return { rc: -1, why: withheld }
 
     return { rc: 1, cmd: cut(`OPENAMS_LOAD GROUP=${m.groups[gi].name} SLOT=${slot.globalId}`, 64) }
 }
@@ -256,17 +327,32 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
     if ((arg = rest(line, 'unload')) !== null) {
         const found = slotFind(m, arg)
         if (found) {
+            const idle = notReady(m, found.unit)
+            if (idle !== null) return refuse(idle)
             if (busyHere(m, found.unit, found.slot)) return refuse(str('REASON_BUSY_HERE'))
             if (m.units[found.unit].slots[found.slot].state !== SlotState.LOADED)
                 return refuse(str('REASON_NOT_LOADED'))
             const lane = unitLane(m, found.unit)
             if (!lane) return refuse(str('REASON_LANE_UNKNOWN'))
+            const withheld = bayWithheld(m, found.unit, found.slot, BayAct.UNLOAD)
+            if (withheld !== null) return refuse(withheld)
             w.cmd(`OPENAMS_UNLOAD FPS=${lane}`)
             return { rc: 1, script: '' }
         }
         const th = toolheadFind(m, arg)
         if (th < 0) return NOT_MINE
         if (!m.toolheads[th].loaded) return refuse(str('REASON_NO_FILAMENT'))
+        // the lane's unload is the loaded bay's unload
+        const lt = m.toolheads[th]
+        if (
+            lt.loadedUnit >= 0 &&
+            lt.loadedUnit < m.units.length &&
+            lt.loadedSlot >= 0 &&
+            lt.loadedSlot < m.units[lt.loadedUnit].slots.length
+        ) {
+            const reason = notReady(m, lt.loadedUnit) ?? bayWithheld(m, lt.loadedUnit, lt.loadedSlot, BayAct.UNLOAD)
+            if (reason !== null) return refuse(reason)
+        }
         w.cmd(`OPENAMS_UNLOAD FPS=${m.toolheads[th].id}`)
         return { rc: 1, script: '' }
     }
@@ -290,6 +376,7 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
         if (m.units[found.unit].slots[found.slot].state === SlotState.EMPTY) return refuse(str('REASON_BAY_EMPTY'))
         const idx = unitHostIdx(m, found.unit)
         if (idx < 0) return refuse(str('REASON_UNIT_UNKNOWN'))
+        if (!unitMay(m, found.unit, UnitAct.RFID_SCAN)) return refuse(str('REASON_NOT_SUPPORTED'))
         w.cmd(`OAMS_RFID_SCAN OAMS=${idx}`)
         return { rc: 1, script: '' }
     }
@@ -298,8 +385,12 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
     if ((arg = rest(line, 'calibrate')) !== null) {
         const found = slotFind(m, arg)
         if (!found) return NOT_MINE
+        const idle = notReady(m, found.unit)
+        if (idle !== null) return refuse(idle)
         const idx = unitHostIdx(m, found.unit)
         if (idx < 0) return refuse(str('REASON_UNIT_UNKNOWN'))
+        const withheld = bayWithheld(m, found.unit, found.slot, BayAct.CALIBRATE)
+        if (withheld !== null) return refuse(withheld)
         w.cmd(`OAMS_CALIBRATE_PTFE_LENGTH OAMS=${idx} SPOOL=${found.slot}`)
         return { rc: 1, script: '' }
     }
@@ -308,7 +399,7 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
     // so only start and stop reach the host.
     if ((arg = rest(line, 'dry')) !== null) {
         let s = new Scanner(arg)
-        const a = s.word(31)
+        const a = s.word(39)
         if (a !== null && s.literal('start', true)) {
             const target = s.int()
             if (target !== null && s.literal('C', false)) {
@@ -318,6 +409,7 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
                     if (unit < 0) return NOT_MINE
                     const idx = unitHostIdx(m, unit)
                     if (idx < 0) return refuse(str('REASON_UNIT_UNKNOWN'))
+                    if (!unitMay(m, unit, UnitAct.DRYER_START)) return refuse(dryReason(m.units[unit]))
                     w.cmd(`OAMS_DRYER_START OAMS=${idx} TARGET=${target} DURATION=${(hours * 3600) | 0}`)
                     return { rc: 1, script: '' }
                 }
@@ -325,13 +417,14 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
         }
 
         s = new Scanner(arg)
-        const b = s.word(31)
+        const b = s.word(39)
         if (b !== null && s.literal('stop', true) && s.atEnd()) {
             const unit = unitFind(m, b)
             if (unit < 0) return NOT_MINE
             if (m.units[unit].dryState === DryState.IDLE) return refuse(str('REASON_DRYER_IDLE'))
             const idx = unitHostIdx(m, unit)
             if (idx < 0) return refuse(str('REASON_UNIT_UNKNOWN'))
+            if (!unitMay(m, unit, UnitAct.DRYER_STOP)) return refuse(str('REASON_NOT_SUPPORTED'))
             w.cmd(`OAMS_DRYER_STOP OAMS=${idx}`)
             return { rc: 1, script: '' }
         }
@@ -340,7 +433,7 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
 
     if ((arg = rest(line, 'setting')) !== null) {
         const s = new Scanner(arg)
-        const key = s.word(31)
+        const key = s.word(39)
         const val = s.word(7)
         if (key === null || val === null) return NOT_MINE
         let value: number
@@ -356,7 +449,7 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
     // Both spellings exist: `create group <name>` and the model's `group create <name>`.
     arg = rest(line, 'create group') ?? rest(line, 'group create')
     if (arg !== null) {
-        const name = new Scanner(arg).word(31)
+        const name = new Scanner(arg).word(39)
         if (name === null) return NOT_MINE
         w.cmd(`OAMSM_CREATE_GROUP GROUP=${name}`)
         return { rc: 1, script: '' }
@@ -367,7 +460,7 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
     // using - so it is the same predicate the view dims the action by.
     arg = rest(line, 'delete group') ?? rest(line, 'group delete')
     if (arg !== null) {
-        const name = new Scanner(arg).word(31)
+        const name = new Scanner(arg).word(39)
         if (name === null) return NOT_MINE
         const gi = groupFind(m, name)
         if (gi < 0) return NOT_MINE
@@ -386,7 +479,7 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
     if (arg !== null) {
         const s = new Scanner(arg)
         const choice = s.int()
-        const id = choice === null ? null : s.word(31)
+        const id = choice === null ? null : s.word(39)
         if (choice === null || id === null) return NOT_MINE
         const found = slotFind(m, id)
         if (!found) return NOT_MINE
@@ -429,7 +522,7 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
     for (const verb of ['link', 'assign spool']) {
         if ((arg = rest(line, verb)) === null) continue
         const s = new Scanner(arg)
-        const id = s.word(31)
+        const id = s.word(39)
         const spool = id === null ? null : s.int()
         if (id === null || spool === null) return NOT_MINE
         const found = slotFind(m, id)
@@ -440,8 +533,8 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
 
     if ((arg = rest(line, 'assign')) !== null) {
         const s = new Scanner(arg)
-        const group = s.word(31)
-        const id = group === null ? null : s.word(31)
+        const group = s.word(39)
+        const id = group === null ? null : s.word(39)
         if (group === null || id === null) return NOT_MINE
         const found = slotFind(m, id)
         if (!found) return NOT_MINE
@@ -476,12 +569,13 @@ function dispatch(w: Writer, line: string, m: Model): Mapped {
         if (unit < 0) return NOT_MINE
         const idx = unitHostIdx(m, unit)
         if (idx < 0) return refuse(str('REASON_UNIT_UNKNOWN'))
+        if (!unitMay(m, unit, UnitAct.CLEAR_FAULT)) return refuse(str('REASON_NOT_SUPPORTED'))
         w.cmd(`OAMS_CLEAR_FAULT OAMS=${idx}`)
         return { rc: 1, script: '' }
     }
 
     if ((arg = rest(line, 'fault retry_load')) !== null) {
-        const group = new Scanner(arg).word(31)
+        const group = new Scanner(arg).word(39)
         if (group === null) return NOT_MINE
         w.cmd(`OAMSM_LOAD_FILAMENT GROUP=${group}`)
         return { rc: 1, script: '' }
@@ -577,7 +671,7 @@ function spoolEdit(args: string, m: Model): RpcMapped {
     const words = args.replace(/^ +/, '')
     const sp = words.indexOf(' ')
     const id = sp < 0 ? words : words.slice(0, sp)
-    if (id.length === 0 || id.length >= 32) return { rc: 0 }
+    if (id.length === 0 || id.length >= 40) return { rc: 0 }
     const found = slotFind(m, id)
     if (!found) return { rc: 0 }
 
@@ -607,10 +701,21 @@ function spoolEdit(args: string, m: Model): RpcMapped {
     const has = (k: string): boolean => k in given
 
     // what the bay can do now: the view's dimming and this refusal in one
+    // a load the host does not offer must not follow a save, or a spool would be
+    // saved for a load that cannot happen: a unit that is not ready says so
+    // first, a bay list without `l` once the bay itself is known to be there
+    if (thenLoad) {
+        const idle = notReady(m, found.unit)
+        if (idle !== null) return { rc: -1, why: idle }
+    }
     if (!m.spoolmanEdit) return { rc: -1, why: str('REASON_EDIT_NO_SPOOLMAN') }
     if (!m.spoolmanOnline) return { rc: -1, why: str('REASON_SPOOLMAN_OFFLINE') }
     const s = m.units[found.unit].slots[found.slot]
     if (s.state === SlotState.EMPTY) return { rc: -1, why: str('REASON_BAY_EMPTY') }
+    if (thenLoad) {
+        const withheld = bayWithheld(m, found.unit, found.slot, BayAct.LOAD)
+        if (withheld !== null) return { rc: -1, why: withheld }
+    }
     if (thenLoad && has('material') && given.material === -1) {
         return { rc: -1, why: str('MATERIAL_CHOOSE') }
     }
@@ -700,7 +805,7 @@ export function actionsRpcMapped(line: string, m: Model): RpcMapped {
 
     if (line.startsWith('spool confirm ')) {
         const s = new Scanner(line.slice(14))
-        const id = s.word(31)
+        const id = s.word(39)
         const grams = id === null ? null : s.int()
         if (id === null || grams === null) return { rc: 0 }
         const found = slotFind(m, id)

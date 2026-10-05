@@ -8,7 +8,7 @@
 // cut to its field's size), and the differential tests hold the two identical.
 
 import { cjsonNumber, cut, f32, fmtFixed } from './cstr'
-import { actionsCheck } from './actions'
+import { actionsCheck, dryReason } from './actions'
 import {
     Busy,
     DryState,
@@ -81,7 +81,7 @@ import type {
 // string is a pointer into a const table in C, so the TypeScript builders
 // hand the table's text over whole and never cut it. The differential tests
 // hold the two identical.
-const ID = 16
+const ID = 40 // VIEW_ID_LEN (MMU_SLOT_ID_LEN)
 const LABEL = 16
 const MATERIAL = 24
 const GRAMS = 20
@@ -93,7 +93,7 @@ const PRESSURE_TEXT = 12
 const STEP_DETAIL = 128 // VIEW_STEP_DETAIL_LEN in src/view/view.h: "{step} · {detail}"
 const REST_PATH = 128 // VIEW_REST_PATH_LEN: "{tool} · {spool} · {material}"
 const SCALE = 8
-const UNIT_ID = 8
+const UNIT_ID = 32 // VIEW_UNIT_ID_LEN (MMU_UNIT_NAME_LEN)
 const ENV_TEXT = 48
 const DRYER_TEXT = 56
 const ALERT_CODE = 40
@@ -104,7 +104,7 @@ const SPOOL_NAME = 64 // the {spool} of a low-filament sentence
 const RUNOUT_TARGET = LABEL * 3
 const SETTING_KEY = 32
 const ACTION_ID = 20
-const ACTION_LINE = 136
+const ACTION_LINE = 168
 const OPTION_LABEL = 72
 
 const MAX_ACTIONS = 10 // VIEW_ACTIONS_MAX in src/view/view.h
@@ -799,9 +799,9 @@ function unitActions(m: Model, unitIdx: number): ViewAction[] {
             submit_label: null,
             require_change: false,
         }
-        if (u.cannotDryReason) {
+        if (dryReason(u)) {
             a.enabled = false
-            a.reason = u.cannotDryReason // the host's own words, borrowed in C
+            a.reason = dryReason(u) // the host's own words, borrowed in C
         } else {
             check(a, cut(`dry ${u.name} start ${target}C ${hours}h`, ACTION_LINE), m)
         }

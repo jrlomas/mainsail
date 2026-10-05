@@ -39,7 +39,7 @@ const MAX_ENTRIES = MAX_UNITS + 7
 // Every kind must fit whole (the C's CORE_KIND_LEN): a kind cut short is never
 // found again, so each apply would take a new entry until the table is full.
 const KIND_LEN = 24
-const NAME_LEN = 24
+const NAME_LEN = 48 // CORE_NAME_LEN
 
 type Json = Record<string, unknown>
 
@@ -91,12 +91,13 @@ export class OpenamsLogic implements Core {
 
     /** The entry for (kind, name), created when new; null when the table is
      *  full. Stored kind and name are cut like the C's buffers, and looked up by
-     *  the raw name, so a name too long to fit is never found again. */
+     *  the cut name too, so a name too long to fit is still found again. */
     private entry(kind: string, name: string): Entry | null {
-        const found = this.entries.find((e) => e.kind === kind && e.name === name)
+        const key = cut(name, NAME_LEN)
+        const found = this.entries.find((e) => e.kind === kind && e.name === key)
         if (found) return found
         if (this.entries.length >= MAX_ENTRIES) return null
-        const created: Entry = { kind: cut(kind, KIND_LEN), name: cut(name, NAME_LEN), copy: null }
+        const created: Entry = { kind: cut(kind, KIND_LEN), name: key, copy: null }
         this.entries.push(created)
         return created
     }
