@@ -31,7 +31,9 @@
         <ul class="lanes">
             <lane-tile v-for="bay in unit.bays" :key="bay.slot_id" :tile="bay" :labels="labels" />
         </ul>
-        <action-popover v-if="env" :anchor-id="anchor" :heading="unit.subtitle" :actions="unit.actions" name="unit" />
+        <!-- No heading: the popover opens from this unit's own card, so naming
+             the unit again ("ams2") adds nothing. -->
+        <action-popover v-if="env" :anchor-id="anchor" :actions="unit.actions" name="unit" />
     </section>
 </template>
 
