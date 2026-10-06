@@ -51,6 +51,7 @@ import {
     fmtSpoolLabel,
     fmtSpoolOption,
     fmtToolSpool,
+    fmtUnitBay,
     fmtUnitSpool,
     format,
     language,
@@ -1412,7 +1413,7 @@ function activityRest(m: Model, th: Toolhead, thIdx: number): ViewToolhead['acti
     // "?" for a bay in no group.
     const gi = slotGroup(m, th.loadedUnit, th.loadedSlot)
     const tool = gi >= 0 ? m.groups[gi].name : str('UNKNOWN_MARK')
-    const spool = fmtSpoolLabel(th.loadedSlot, SUBLABEL)
+    const spool = fmtUnitBay(unit.name, th.loadedSlot, SUBLABEL)
     const label = slot.material
         ? format('REST_PATH', { tool, spool, material: slot.material }, REST_PATH)
         : format('REST_PATH_NO_MATERIAL', { tool, spool }, REST_PATH)

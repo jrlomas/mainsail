@@ -168,6 +168,9 @@ export const fmtSpoolLabel = (bay: number, n: number): string => format('SPOOL_L
 export const fmtUnitSpool = (unit: string, bay: number, n: number): string =>
     format('UNIT_SPOOL', { unit, n: bay + 1 }, n)
 
+/** "oams2:2": a bay named by its unit's config name (language-neutral). */
+export const fmtUnitBay = (unit: string, bay: number, n: number): string => format('UNIT_BAY', { unit, n: bay + 1 }, n)
+
 /** "T1 (oams2 Spool 2)". */
 export const fmtToolSpool = (tool: string, unit: string, bay: number, n: number): string =>
     format('TOOL_SPOOL', { tool, unit, n: bay + 1 }, n)
