@@ -255,6 +255,9 @@ export default class OpenamsView extends Vue {
 .theme--light .oams-panel[data-theme='host'] {
     --oams-pop-base: #ffffff;
     --oams-pop-ink: rgba(0, 0, 0, 0.87);
+    /* On a light card a darkened surface would read gray: keep the faint
+       foreground tint there (design/tokens.json host surface-2). */
+    --oams-surface-2: color-mix(in srgb, currentColor 5%, transparent);
 }
 </style>
 

@@ -24,7 +24,7 @@
     --oams-ink-threshold: 160;
     --oams-bg: transparent;
     --oams-surface-1: transparent;
-    --oams-surface-2: color-mix(in srgb, currentColor 5%, transparent);
+    --oams-surface-2: rgba(0, 0, 0, 0.35);
     --oams-surface-3: color-mix(in srgb, currentColor 8%, transparent);
     --oams-line: color-mix(in srgb, currentColor 10%, transparent);
     --oams-text-muted: color-mix(in srgb, currentColor 82%, transparent);
