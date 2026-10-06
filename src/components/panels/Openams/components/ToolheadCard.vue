@@ -122,9 +122,13 @@ export default class ToolheadCard extends Vue {
 
 /* Three zones: icon and titles left, the pressure block centered, the alert
    slot top right (its space is always reserved). */
+/* The title, the pressure block, the alert slot. The alert slot is only as
+   wide as its icon, so the pressure block sits right of center and the title
+   (the toolhead name, its FPS id and the loaded spool's line) gets the room
+   (a centered block left the title ~150 px on a ~660 px card). */
 .fps-head {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(200px, 320px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(200px, 320px) auto;
     gap: 20px;
     align-items: center;
     margin: 0 6px 12px;
