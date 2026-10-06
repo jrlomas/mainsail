@@ -1,5 +1,5 @@
 <template>
-    <span class="status-tag" :class="`tone-${tag.tone}`" :title="title">{{ tag.text }}</span>
+    <span class="status-tag" :class="[`tone-${tag.tone}`, { quiet }]" :title="title">{{ tag.text }}</span>
 </template>
 
 <script lang="ts">
@@ -12,6 +12,8 @@ import type { ViewTile } from '../logic/index'
 @Component
 export default class StatusTag extends Vue {
     @Prop({ required: true }) readonly tag!: NonNullable<ViewTile['tag']>
+    /** Plain text with no pill: for a state that is only a word, such as an empty bay. */
+    @Prop({ default: false }) readonly quiet!: boolean
 
     get title(): string {
         return this.tag.code ? `${this.tag.detail} (${this.tag.code})` : this.tag.detail
@@ -50,6 +52,16 @@ export default class StatusTag extends Vue {
     &.tone-neutral {
         color: #e6e9ed;
         background: #3a4048;
+    }
+
+    /* Quiet: the word alone, muted, in the tile's own ink. */
+    &.quiet {
+        padding: 2px 0;
+        font-weight: 500;
+        color: var(--ink, var(--oams-text-muted));
+        background: none;
+        box-shadow: none;
+        opacity: 0.8;
     }
 }
 </style>

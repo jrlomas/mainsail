@@ -3,7 +3,9 @@
         <ol class="stepper" :class="`kind-${activity.kind}`" :aria-label="label">
             <li v-if="rest" class="step rest">
                 <i :class="{ outline: rest.outline }" :style="restStyle"></i>
-                <span>{{ rest.label }}</span>
+                <span :class="{ blank: quietRest && rest.loaded }">
+                    {{ quietRest && rest.loaded ? '' : rest.label }}
+                </span>
             </li>
             <li
                 v-for="(name, i) in activity.steps"
@@ -37,6 +39,9 @@ import type { ViewToolhead } from '../logic/index'
 export default class Stepper extends Vue {
     @Prop({ required: true }) readonly activity!: ViewToolhead['activity']
     @Prop({ required: true }) readonly label!: string
+    /** The header already says what is loaded: the resting segment keeps its
+     *  color and its place, and does not repeat the label. */
+    @Prop({ default: false }) readonly quietRest!: boolean
 
     get rest(): ViewToolhead['activity']['rest'] {
         return this.activity.steps.length ? null : this.activity.rest
@@ -113,6 +118,10 @@ export default class Stepper extends Vue {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+
+        &.blank {
+            min-height: 1.2em;
+        }
     }
 
     /* a dark filament on the dark surface: a light 1 px outline (the core says when) */

@@ -7,8 +7,16 @@
                     <span v-if="tool" class="th-tool" :class="`ink-${tool.ink}`">{{ tool.label }}</span>
                 </div>
                 <div class="fps-text">
-                    <h2>{{ toolhead.title }}</h2>
-                    <p>{{ toolhead.subtitle }}</p>
+                    <div class="fps-titleline">
+                        <h2>{{ toolhead.title }}</h2>
+                        <span class="fps-sub">{{ toolhead.subtitle }}</span>
+                    </div>
+                    <p class="fps-loaded" :data-loaded="loaded ? 'true' : 'false'">
+                        <template v-if="loaded">
+                            <i class="fps-swatch" :class="{ outline: loaded.outline }" :style="swatchStyle"></i>
+                            <span>{{ loaded.label }}</span>
+                        </template>
+                    </p>
                 </div>
             </div>
             <pressure-bar :pressure="toolhead.pressure" />
@@ -18,15 +26,21 @@
         </div>
         <div class="status" role="status">
             <div class="status-steps">
-                <stepper v-if="hasStepsOrRest" :activity="toolhead.activity" :label="toolhead.message.text" />
+                <stepper
+                    v-if="hasStepsOrRest"
+                    :activity="toolhead.activity"
+                    :label="toolhead.message.text"
+                    :quiet-rest="!!loaded" />
             </div>
-            <message-row :message="toolhead.message" />
+            <div class="status-row">
+                <message-row :message="toolhead.message" />
+                <div class="th-actions">
+                    <action-button v-for="action in toolhead.actions" :key="action.id" :action="action" />
+                </div>
+            </div>
         </div>
         <div class="mmus">
             <unit-section v-for="unit in toolhead.units" :key="unit.id" :unit="unit" :labels="labels" />
-        </div>
-        <div class="th-actions">
-            <action-button v-for="action in toolhead.actions" :key="action.id" :action="action" />
         </div>
     </section>
 </template>
@@ -42,8 +56,10 @@ import Stepper from './Stepper.vue'
 import ToolheadIcon from './ToolheadIcon.vue'
 import UnitSection from './UnitSection.vue'
 
-/** A toolhead (an FPS lane): the icon and titles, the pressure block centered,
- *  the alert slot, the fixed status area, its units and its actions. */
+/** A toolhead (an FPS lane): the icon and titles (the loaded filament's line
+ *  under the title, its own place whether or not one is loaded), the pressure
+ *  block centered, the alert slot, the fixed status area with the toolhead's
+ *  actions beside the message they act on, and its units. */
 @Component({
     components: { ActionButton, AlertBadge, MessageRow, PressureBar, Stepper, ToolheadIcon, UnitSection },
 })
@@ -62,6 +78,17 @@ export default class ToolheadCard extends Vue {
 
     get iconColor(): string {
         return this.tool?.color ?? '#5c6370'
+    }
+
+    /** The loaded filament's own line (the core's resting label), given its
+     *  weight in the header: what is in the toolhead is the headline. */
+    get loaded(): { label: string; color: string | null; outline: boolean } | null {
+        const rest = this.toolhead.activity.rest
+        return rest && rest.loaded ? rest : null
+    }
+
+    get swatchStyle(): Record<string, string> {
+        return this.loaded?.color ? { background: this.loaded.color } : {}
     }
 
     get hasSteps(): boolean {
@@ -187,11 +214,52 @@ export default class ToolheadCard extends Vue {
         font-weight: var(--oams-fw-title);
         letter-spacing: -0.02em;
     }
+}
 
-    p {
-        margin-top: 5px;
-        font-size: 13px;
-        color: var(--oams-text-muted);
+/* The title and the demoted id (fps1) share a line. */
+.fps-titleline {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.fps-sub {
+    flex: none;
+    font-size: 12px;
+    color: var(--oams-text-faint);
+}
+
+/* The loaded filament: body size, with a swatch. The line keeps its height
+   whether or not something is loaded, so the header never jumps. */
+.fps-loaded {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 22px;
+    margin-top: 5px;
+    font-size: var(--oams-fs-body);
+    line-height: 22px;
+    color: var(--oams-text);
+
+    span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
+.fps-swatch {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: var(--oams-surface-3);
+    box-shadow: inset 0 0 0 1px var(--oams-line);
+
+    &.outline {
+        box-shadow: 0 0 0 1px var(--oams-text-faint);
     }
 }
 
@@ -213,15 +281,42 @@ export default class ToolheadCard extends Vue {
     gap: var(--oams-gap-card-gap);
 }
 
-/* Reserved height: the row keeps its space with no button in it. */
+/* The message and the toolhead's actions share a row: Unload and Stop sit
+   next to what they act on. A narrow card wraps them under the message. */
+.status-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    margin-top: 8px;
+
+    ::v-deep .message {
+        flex: 1 1 220px;
+        min-width: 0;
+    }
+}
+
 .th-actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
     flex-wrap: wrap;
-    margin: 12px 6px 0;
-    min-height: 34px;
+    margin-left: auto;
     align-items: center;
+}
+
+/* Stop is identifiable before it is urgent: a quiet error-toned outline at
+   rest (fainter still when dimmed), firmer when it can be pressed. Unload
+   stays neutral. */
+.th-actions ::v-deep .btn[data-action='stop'] {
+    color: color-mix(in srgb, var(--oams-error) 75%, var(--oams-text));
+    border-color: color-mix(in srgb, var(--oams-error) 38%, transparent);
+
+    &[data-enabled='true'] {
+        color: var(--oams-error);
+        border-color: var(--oams-error);
+        background: color-mix(in srgb, var(--oams-error) 10%, var(--oams-surface-2));
+    }
 }
 
 @container steps (max-width: 900px) {
@@ -275,6 +370,10 @@ export default class ToolheadCard extends Vue {
 }
 
 @container panel (max-width: 440px) {
+    .th-actions {
+        flex: 1 1 100%;
+    }
+
     .fps {
         padding: 12px 8px 8px;
         border-radius: 18px;

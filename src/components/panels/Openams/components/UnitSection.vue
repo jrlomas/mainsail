@@ -29,7 +29,7 @@
             </div>
         </div>
         <ul class="lanes">
-            <lane-tile v-for="bay in unit.bays" :key="bay.slot_id" :tile="bay" />
+            <lane-tile v-for="bay in unit.bays" :key="bay.slot_id" :tile="bay" :labels="labels" />
         </ul>
         <action-popover v-if="env" :anchor-id="anchor" :heading="unit.subtitle" :actions="unit.actions" name="unit" />
     </section>

@@ -169,6 +169,8 @@ export interface Toolhead {
     runoutToSlot: number
     pressure: number // -1 = unknown (a float32 in the C)
     setPoint: number
+    bandLow: number // the regulator's normal band; -1 = unknown (float32s in the C)
+    bandHigh: number
 }
 
 /** What an alert's text is: the host's own words, or one of the two the core
@@ -472,6 +474,8 @@ function toolheadGetOrCreate(m: Model, id: string | null): Toolhead | null {
         runoutToSlot: -1,
         pressure: -1,
         setPoint: -1,
+        bandLow: -1,
+        bandHigh: -1,
     }
     m.toolheads.push(th)
     return th
@@ -1456,6 +1460,14 @@ export function applyLanes(m: Model, lanes: unknown): boolean {
         if (!th) continue
         th.pressure = typeof lane.pressure === 'number' ? f32(lane.pressure) : -1
         th.setPoint = typeof lane.set_point === 'number' ? f32(lane.set_point) : -1
+        // [low, high]: the band the unit's regulator keeps the pressure in.
+        // Anything else (absent, null, not two numbers) is unknown.
+        const band = lane.pressure_band
+        th.bandLow = th.bandHigh = -1
+        if (Array.isArray(band) && band.length === 2 && typeof band[0] === 'number' && typeof band[1] === 'number') {
+            th.bandLow = f32(band[0])
+            th.bandHigh = f32(band[1])
+        }
     }
     refreshThis(m)
     return true

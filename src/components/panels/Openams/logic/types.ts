@@ -83,6 +83,9 @@ export interface ViewTile {
     ink: Ink
     gradient_top: string | null
     gradient_bottom: string | null
+    /** The palette name nearest the color ("black"), for a meta line; "" when
+     *  the color is unknown. */
+    color_name: string
     /** One flat, dimmed look: empty, unknown or offline. */
     dim: boolean
     /** True exactly for a bay with no spool (empty) and for a tile of an offline unit. */
@@ -175,6 +178,10 @@ export interface ViewToolhead {
     pressure: {
         value: number
         set_point: number
+        /** [low, high]: the band the unit's regulator keeps the pressure in, or
+         *  null when the host does not say. Drawn on the bar, never judged: the
+         *  bar stays neutral whatever the reading (UNIFIED_UI.md 4b). */
+        band: [number, number] | null
         /** "Pressure". */
         label: string
         text: string
@@ -273,6 +280,8 @@ export interface ViewLabels {
     groups: string
     /** The row of the bays that belong to no group. */
     no_group: string
+    /** "Low": a tile's word for a spool under 15 % (`tile.low`). */
+    low: string
 }
 
 export interface View {

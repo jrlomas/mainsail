@@ -12,6 +12,7 @@
             aria-valuemax="1"
             :aria-valuenow="pressure.value"
             :aria-valuetext="pressure.text">
+            <b v-if="bandStyle" class="band" :style="bandStyle" data-band></b>
             <i :style="{ width: fill }"></i>
             <b class="setpoint" :style="{ left: setPoint }"></b>
         </div>
@@ -28,14 +29,26 @@ import type { ViewToolhead } from '../logic/index'
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n))
 
 /** The toolhead's pressure: the label from the core, its reading, and the bar
- *  with the set point. The bar is always neutral: a reading is not a judgment
- *  (docs/design/UNIFIED_UI.md 4b). */
+ *  with the set point. The bar stays neutral: a reading is not a judgment
+ *  (docs/design/UNIFIED_UI.md 4b). When the host reports the regulator's
+ *  normal band, it is drawn as a quiet segment of the track, behind the fill.
+ *  The band is information only: the fill and the number never change color,
+ *  whatever the reading; a problem still arrives as a message. */
 @Component
 export default class PressureBar extends Vue {
     @Prop({ default: null }) readonly pressure!: ViewToolhead['pressure']
 
     get fill(): string {
         return `${(clamp01(this.pressure!.value) * 100).toFixed(2)}%`
+    }
+
+    /** The band's segment (left and width), or null when the host has none. */
+    get bandStyle(): Record<string, string> | null {
+        const band = this.pressure!.band
+        if (!band) return null
+        const low = clamp01(Math.min(band[0], band[1]))
+        const high = clamp01(Math.max(band[0], band[1]))
+        return { left: `${(low * 100).toFixed(2)}%`, width: `${((high - low) * 100).toFixed(2)}%` }
     }
 
     get setPoint(): string {
@@ -80,6 +93,8 @@ export default class PressureBar extends Vue {
     overflow: hidden;
 
     > i {
+        position: relative;
+        z-index: 1;
         display: block;
         height: 100%;
         border-radius: inherit;
@@ -88,7 +103,17 @@ export default class PressureBar extends Vue {
     }
 }
 
+/* The regulator's band: a slightly lighter stretch of the track, under the fill. */
+.band {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 0;
+    background: color-mix(in srgb, var(--oams-text) 16%, var(--oams-surface-3));
+}
+
 .setpoint {
+    z-index: 2;
     position: absolute;
     top: 0;
     bottom: 0;

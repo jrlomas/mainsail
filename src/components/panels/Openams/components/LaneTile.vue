@@ -11,7 +11,9 @@
                 data-popover-invoker="tile"></button>
             <div class="lane-top">
                 <span class="lane-group">
-                    <span class="lane-id">{{ tile.label }}</span>
+                    <span class="lane-id" :class="{ blank: unlabeled }" :aria-hidden="unlabeled ? 'true' : undefined">
+                        {{ tile.label }}
+                    </span>
                     <spare-badge v-if="tile.spare" :spare="tile.spare" />
                     <button
                         v-if="changeGroup"
@@ -28,14 +30,15 @@
             </div>
             <div v-if="tile.sublabel" class="lane-sub">{{ tile.sublabel }}</div>
             <div class="lane-name">{{ tile.name }}</div>
-            <div class="lane-meta">
-                <span v-if="tile.material">{{ tile.material }}</span>
+            <div ref="meta" class="lane-meta">
+                <span v-if="metaFirst" class="m-first">{{ metaFirst }}</span>
                 <span v-if="tile.grams_text" class="g">{{ tile.grams_text }}</span>
+                <span v-if="tile.low" class="low">{{ labels.low }}</span>
             </div>
             <div class="lane-bottom">
                 <ring v-if="hasRing" :tile="tile" />
                 <span v-else class="ring-space"></span>
-                <status-tag v-if="tile.tag" :tag="tile.tag" />
+                <status-tag v-if="tile.tag" :tag="tile.tag" :quiet="quietTag" />
                 <button
                     type="button"
                     class="ring-hit"
@@ -67,7 +70,7 @@
 
 <script lang="ts">
 import { Component, Inject, Prop, Vue } from 'vue-property-decorator'
-import type { ViewAction, ViewTile } from '../logic/index'
+import type { ViewAction, ViewLabels, ViewTile } from '../logic/index'
 import ActionPopover from './ActionPopover.vue'
 import ActionRow from './ActionRow.vue'
 import RfidIcon from './RfidIcon.vue'
@@ -89,10 +92,52 @@ import { newAnchor } from '../popover'
 @Component({ components: { ActionPopover, ActionRow, RfidIcon, Ring, SpareBadge, StatusTag } })
 export default class LaneTile extends Vue {
     @Prop({ required: true }) readonly tile!: ViewTile
+    @Prop({ required: true }) readonly labels!: ViewLabels
     @Inject(INTERACT) readonly ctrl!: Interactivity
 
     /** One anchor per target: the ids are unique per page, so two panels
      *  mounted at once never fight over the same popover. */
+    private meter: ResizeObserver | null = null
+
+    mounted(): void {
+        this.fitMeta()
+        // the words are measured in the face they are drawn in
+        void document.fonts?.ready.then(() => this.fitMeta())
+        const meta = this.$refs.meta as HTMLElement | undefined
+        if (meta && typeof ResizeObserver !== 'undefined') {
+            this.meter = new ResizeObserver(() => this.fitMeta())
+            this.meter.observe(meta)
+        }
+    }
+
+    updated(): void {
+        this.fitMeta()
+    }
+
+    beforeDestroy(): void {
+        this.meter?.disconnect()
+    }
+
+    /** The meta line never clips a word: when "color · grams Low" does not fit
+     *  the tile's width in this language, the color name goes first, then the
+     *  Low word (the grams are the decision). The container queries below
+     *  decide by width alone; this decides by the words that are there. It is
+     *  DOM-only on purpose (inline display, no reactive state), so it cannot
+     *  re-render itself. */
+    fitMeta(): void {
+        const meta = this.$refs.meta as HTMLElement | undefined
+        if (!meta) return
+        const parts = [meta.querySelector<HTMLElement>('.m-first'), meta.querySelector<HTMLElement>('.low')]
+        for (const part of parts) if (part) part.style.display = ''
+        for (const part of parts) {
+            if (!part || meta.scrollWidth <= meta.clientWidth) continue
+            part.style.display = 'none'
+        }
+        // a part dropped by width alone leaves its separator to the next one
+        const g = meta.querySelector<HTMLElement>('.g')
+        if (g) g.classList.toggle('first', !parts[0] || getComputedStyle(parts[0]).display === 'none')
+    }
+
     readonly tagAnchor = newAnchor()
     readonly tileAnchor = newAnchor()
 
@@ -121,6 +166,28 @@ export default class LaneTile extends Vue {
      *  tag sits at the same height on every tile. */
     get hasRing(): boolean {
         return this.tile.state !== 'empty'
+    }
+
+    /** The meta line's first part. The core's name mirrors the material until a
+     *  spool has a name of its own, and then the color name says something new;
+     *  a real spool name keeps its material. Empty parts are left out. */
+    get metaFirst(): string {
+        const tile = this.tile
+        if (tile.name.toLowerCase() !== tile.material.toLowerCase()) return tile.material
+        // A low spool's line is "grams Low": the word outranks the color name
+        // for the little room a tile's meta line has.
+        return tile.low ? '' : tile.color_name
+    }
+
+    /** An empty bay with no tool has nothing to label: its box stays (the
+     *  heights align), its "?" does not show. */
+    get unlabeled(): boolean {
+        return this.tile.state === 'empty' && this.tile.tool === null
+    }
+
+    /** An empty bay says its one word quietly; every other tag keeps its pill. */
+    get quietTag(): boolean {
+        return this.tile.state === 'empty' && this.tile.tag?.tone === 'neutral'
     }
 
     get filled(): boolean {
@@ -425,6 +492,10 @@ export default class LaneTile extends Vue {
     filter: brightness(1.15);
 }
 
+.lane-id.blank {
+    visibility: hidden;
+}
+
 .lane-id {
     font-size: var(--oams-fs-tile-label);
     font-weight: var(--oams-fw-tile-label);
@@ -472,17 +543,36 @@ export default class LaneTile extends Vue {
     min-height: 1.2em;
     font-size: var(--oams-fs-meta);
     line-height: 1.2;
-    opacity: 0.8;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 
-    .g::before {
+    > span:not(.low) {
+        opacity: 0.8;
+    }
+
+    > span + span::before {
         content: ' · ';
     }
 
-    > .g:first-child::before {
-        content: '';
+    > .g.first::before {
+        content: none;
+    }
+
+    /* The word for a spool under 15 %, in the ring's own amber, on its own
+       dark chip so it reads on any filament color. */
+    > .low {
+        margin-left: 4px;
+        padding: 0 4px;
+        border-radius: 3px;
+        background: rgba(0, 0, 0, 0.6);
+        color: #ffd27a;
+        font-weight: 600;
+        text-shadow: none;
+
+        &::before {
+            content: none !important;
+        }
     }
 }
 
@@ -504,7 +594,19 @@ export default class LaneTile extends Vue {
     height: var(--ring);
 }
 
+/* The meta line is "color name · grams  Low", dropped from the left as the
+   tile narrows: the color name first (it is the one part with no fixed length
+   in any language), then the Low word; the grams stay. A low spool leaves the
+   color name out altogether (see metaFirst). */
 @container tile (max-width: 104px) {
+    .lane-meta .m-first {
+        display: none;
+    }
+
+    .lane-meta .g::before {
+        content: none;
+    }
+
     .lane {
         border-radius: var(--oams-radius-tile-compact);
         padding: 7px 5px 6px 7px;
@@ -550,13 +652,16 @@ export default class LaneTile extends Vue {
 }
 
 @container tile (max-width: 92px) {
-    .lane-meta {
-        display: none;
-    }
-
     .lane .status-tag {
         font-size: 10px;
         padding: 1px 3px;
+    }
+}
+
+@container tile (max-width: 80px) {
+    /* then the Low word; the grams and the percent are the decision */
+    .lane-meta .low {
+        display: none;
     }
 }
 

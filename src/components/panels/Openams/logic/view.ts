@@ -382,6 +382,7 @@ function buildTile(m: Model, unitIdx: number, bay: number): ViewTile {
         ink,
         gradient_top: gradient ? hex(gradient[0]) : null,
         gradient_bottom: gradient ? hex(gradient[1]) : null,
+        color_name: s.colorKnown ? colorName(s.color) : '',
         dim,
         hatched,
         name: material,
@@ -1461,6 +1462,10 @@ function buildToolhead(m: Model, index: number): ViewToolhead {
             ? {
                   value: cjsonNumber(th.pressure),
                   set_point: cjsonNumber(th.setPoint),
+                  band:
+                      th.bandLow >= 0 && th.bandHigh > th.bandLow && th.bandHigh <= 1
+                          ? [cjsonNumber(th.bandLow), cjsonNumber(th.bandHigh)]
+                          : null,
                   label: str('LABEL_PRESSURE'),
                   text: fmtPressure(th.pressure, PRESSURE_TEXT),
                   scale: [fmtScale(0, SCALE), fmtScale(th.setPoint, SCALE), fmtScale(1, SCALE)],
@@ -1604,6 +1609,7 @@ export function buildView(m: Model): View {
             action_refused: str('ACTION_REFUSED'),
             groups: str('SCREEN_GROUPS'),
             no_group: str('MAP_NO_GROUP'),
+            low: str('TILE_LOW'),
         },
         spoolman: { online: m.spoolmanOnline, pending },
         settings: SETTING_KEYS.map((_, i) => buildSetting(m, i)),
