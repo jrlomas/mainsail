@@ -22,6 +22,9 @@ export interface ViewConfirm {
 export interface ViewFieldOption {
     value: number
     label: string
+    /** Only on a Spoolman spool option: its filament color as "#rrggbb", or null
+     *  when the filament has none. Every other option has no `color` key. */
+    color?: string | null
 }
 
 export interface ViewField {

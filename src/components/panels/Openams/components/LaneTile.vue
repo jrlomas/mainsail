@@ -594,11 +594,12 @@ export default class LaneTile extends Vue {
     height: var(--ring);
 }
 
-/* The meta line is "color name · grams  Low", dropped from the left as the
-   tile narrows: the color name first (it is the one part with no fixed length
-   in any language), then the Low word; the grams stay. A low spool leaves the
-   color name out altogether (see metaFirst). */
-@container tile (max-width: 104px) {
+/* The meta line is "color name · grams  Low". fitMeta() drops the color
+   name first (it is the one part with no fixed length in any language), then
+   the Low word, when the words do not fit; the grams stay. Under 92 px the
+   color name never has room, so it is not drawn at all. A low spool leaves
+   the color name out altogether (see metaFirst). */
+@container tile (max-width: 92px) {
     .lane-meta .m-first {
         display: none;
     }
@@ -606,7 +607,9 @@ export default class LaneTile extends Vue {
     .lane-meta .g::before {
         content: none;
     }
+}
 
+@container tile (max-width: 104px) {
     .lane {
         border-radius: var(--oams-radius-tile-compact);
         padding: 7px 5px 6px 7px;

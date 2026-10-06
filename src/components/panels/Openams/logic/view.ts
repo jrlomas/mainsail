@@ -66,6 +66,7 @@ import type {
     View,
     ViewAction,
     ViewField,
+    ViewFieldOption,
     ViewAlert,
     ViewAlertGroup,
     ViewGroup,
@@ -730,7 +731,7 @@ function tileActions(m: Model, unitIdx: number, bay: number): ViewAction[] {
         const line = cut(`link ${id} {spool}`, ACTION_LINE)
         const a = list.add('assign_spool', str('ACTION_ASSIGN_SPOOL'), line, 'normal')
         if (a) {
-            const options: { value: number; label: string }[] = []
+            const options: ViewFieldOption[] = []
             let value = 0
             for (const sp of m.spools) {
                 if (options.length >= MAX_OPTIONS) break
@@ -738,6 +739,7 @@ function tileActions(m: Model, unitIdx: number, bay: number): ViewAction[] {
                 options.push({
                     value: sp.id,
                     label: fmtSpoolOption(sp.vendor, sp.material, sp.remainingG, OPTION_LABEL),
+                    color: sp.colorKnown ? hex(sp.color) : null,
                 })
                 // The bay's current link (else the first spool) is the default.
                 if (options.length === 1 || sp.id === s.spoolId) value = sp.id

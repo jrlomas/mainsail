@@ -14,7 +14,7 @@
             @click="toggle"
             @keydown="onKey">
             <span
-                v-if="swatches"
+                v-if="showSwatches"
                 class="swatch"
                 :class="swatchClass(chosen)"
                 :style="swatch(chosen)"
@@ -43,7 +43,7 @@
                 @mouseenter="hover(i)"
                 @click="choose(i)">
                 <span
-                    v-if="swatches"
+                    v-if="showSwatches"
                     class="swatch"
                     :class="swatchClass(option)"
                     :style="swatch(option)"
@@ -98,6 +98,12 @@ export default class SelectField extends Vue {
 
     private get btn(): HTMLElement {
         return this.$el.querySelector('.select-btn') as HTMLElement
+    }
+
+    /** A color field, or a list whose options carry a `color` of their own (a
+     *  Spoolman spool), draws a swatch on each option. */
+    get showSwatches(): boolean {
+        return this.swatches || this.options.some((o) => o.color !== undefined)
     }
 
     /** The option the button names. */
@@ -177,12 +183,16 @@ export default class SelectField extends Vue {
      *  decimal RGB number, and -1 for "not set" (PRINCIPLES.md 6: the color is
      *  content, and "none" is drawn as the empty look, never as a color). */
     swatch(option: ViewFieldOption | undefined): Record<string, string> {
+        // An option with a color of its own: "#rrggbb" is the fill, null is
+        // nothing known (the empty look, never black).
+        if (option && option.color !== undefined) return option.color ? { background: option.color } : {}
         const v = option?.value ?? -1
         if (v < 0) return {}
         return { background: `rgb(${(v >> 16) & 255}, ${(v >> 8) & 255}, ${v & 255})` }
     }
 
     swatchClass(option: ViewFieldOption | undefined): Record<string, boolean> {
+        if (option && option.color !== undefined) return { 'swatch-unset': !option.color }
         return { 'swatch-unset': (option?.value ?? -1) < 0 }
     }
 
